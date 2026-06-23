@@ -86,12 +86,20 @@ def _anchor_location(anchor: dict[str, Any]) -> dict[str, Any] | None:
     line = anchor.get("line")
     line_type = (anchor.get("lineType") or "").upper()
     side = "old" if line_type == "REMOVED" else "new" if line_type else None
-    path = anchor.get("path") or {}
     return {
-        "path": path.get("toString") or path.get("displayId") or anchor.get("filePath"),
+        "path": _anchor_path(anchor),
         "line": line,
         "side": side,
     }
+
+
+def _anchor_path(anchor: dict[str, Any]) -> Any:
+    path = anchor.get("path")
+    if isinstance(path, dict):
+        return path.get("toString") or path.get("displayId") or anchor.get("filePath")
+    if isinstance(path, str):
+        return path
+    return anchor.get("filePath")
 
 
 def _display_user(user: Any) -> str:
