@@ -1,0 +1,39 @@
+# Example configuration for Bitbucket PR Comments Exporter.
+# Copy this file to either:
+#   ./bb-export.toml
+#   ~/.config/bb-export/config.toml
+# or pass it explicitly with:
+#   bb-export server --config bb-export.toml --pr 500
+#
+# Do not put tokens, app passwords, or personal access tokens in this file.
+# Use --token or the BB_TOKEN environment variable for secrets.
+
+[server]
+# Base URL for Bitbucket Server/Data Center. If Bitbucket is hosted under a
+# context path, include it here, for example "https://company.example/bitbucket".
+server = "https://bitbucket.CompanyX"
+
+# Static repository location. These can still be overridden by CLI flags or
+# values parsed from --url.
+project = "CoolP"
+repo = "SomeRepo"
+
+# Optional. If omitted, use --username or BB_USERNAME when your auth mode needs
+# a username. Bearer/PAT-style auth may not need one.
+username = "your.username"
+
+[cloud]
+# Use this section instead of [server] for Bitbucket Cloud defaults.
+# workspace = "your-workspace"
+# repo = "your-repo"
+
+[defaults]
+# Directory for generated files when --output is not provided. The exporter will
+# write names like pr_500_comments.md or pr_500_comments.json inside it.
+output_dir = "exports"
+
+# Output format: "md" for LLM-friendly Markdown, or "json" for normalized data.
+format = "md"
+
+# Include deleted comments as ~~[deleted]~~. By default they are omitted.
+include_deleted = false
