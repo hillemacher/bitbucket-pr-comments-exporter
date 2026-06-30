@@ -13,6 +13,8 @@ This repository contains a stdlib-only Python CLI for exporting Bitbucket pull r
 - `README.md`: user-facing installation and usage docs.
 - `bb-export.example.toml`: commented non-secret config template.
 - `pyproject.toml`: package metadata and `bb-export` console script.
+- `LICENSE`: MIT license for public publication.
+- `.github/workflows/test.yml`: GitHub Actions workflow running the `unittest` suite on Python 3.11 and 3.12.
 - `.gitignore`: excludes local config, secrets, Python caches, virtual environments, and build outputs.
 - `.serena/`: versioned Serena project settings and memories; `.serena/.gitignore` excludes local overrides and cache files.
 
@@ -35,7 +37,7 @@ Tests use `unittest` and `unittest.mock`. Name files `tests/test_*.py` and test 
 
 ## Commit & Pull Request Guidelines
 
-Use short imperative commit messages such as `Add PR URL config support`; the repository history starts with `Initial commit`. Pull requests should describe the behavior change, note user-facing CLI/config updates, include test results, and mention any README or example config changes.
+Use short imperative commit messages such as `Add PR URL config support`. Pull requests should describe the behavior change, note user-facing CLI/config updates, include test results, and mention any README or example config changes.
 
 ## Security & Configuration Tips
 
