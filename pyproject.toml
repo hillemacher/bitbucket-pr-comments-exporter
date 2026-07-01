@@ -26,6 +26,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/hillemacher/bitbucket-pr-comments-exporter"
+Repository = "https://github.com/hillemacher/bitbucket-pr-comments-exporter"
+Issues = "https://github.com/hillemacher/bitbucket-pr-comments-exporter/issues"
+
 [project.scripts]
 bb-export = "bb_pr_export.cli:main"
 

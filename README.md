@@ -1,5 +1,7 @@
 # Bitbucket PR Comments Exporter
 
+[![Tests](https://github.com/hillemacher/bitbucket-pr-comments-exporter/actions/workflows/test.yml/badge.svg)](https://github.com/hillemacher/bitbucket-pr-comments-exporter/actions/workflows/test.yml)
+
 Bitbucket PR Comments Exporter is a self-contained Python CLI that exports pull request metadata, review outcomes, inline comments, general comments, and replies from Bitbucket Cloud or Bitbucket Server/Data Center into a clean Markdown file suitable for LLM context, or into normalized JSON for programmatic use.
 
 ## Installation
