@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
-from .http import auth_headers, fetch_json, paginate_server
+from .http import BitbucketExportError, auth_headers, fetch_json, paginate_server
 
 
 def export_pull_request(
@@ -23,6 +23,8 @@ def export_pull_request(
         f"/pull-requests/{quote(str(pr_id))}"
     )
     pr = fetch_json(base, headers)
+    if not isinstance(pr, dict):
+        raise BitbucketExportError(f"Expected JSON object from {base}")
     activities = paginate_server(f"{base}/activities?limit=100", headers)
 
     return {

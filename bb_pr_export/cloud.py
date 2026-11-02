@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
-from .http import auth_headers, fetch_json, paginate_cloud
+from .http import BitbucketExportError, auth_headers, fetch_json, paginate_cloud
 
 
 CLOUD_BASE_URL = "https://api.bitbucket.org/2.0"
@@ -15,6 +15,8 @@ def export_pull_request(workspace: str, repo: str, pr_id: str, token: str) -> di
     headers = auth_headers(token)
     base = f"{CLOUD_BASE_URL}/repositories/{quote(workspace)}/{quote(repo)}/pullrequests/{quote(str(pr_id))}"
     pr = fetch_json(base, headers)
+    if not isinstance(pr, dict):
+        raise BitbucketExportError(f"Expected JSON object from {base}")
     comments = paginate_cloud(f"{base}/comments", headers)
 
     return {

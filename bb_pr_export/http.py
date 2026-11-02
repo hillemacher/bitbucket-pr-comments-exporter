@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import base64
 import json
+import http.client
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.parse import urljoin, urlsplit
 
 
 class BitbucketExportError(Exception):
@@ -46,6 +48,30 @@ class TransientHttpError(HttpError):
     """A retryable server-side HTTP error."""
 
 
+DEFAULT_TIMEOUT = 30.0
+
+
+def _origin(url: str) -> tuple[str, str, int]:
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username is not None:
+            raise ValueError("Expected an HTTP(S) URL without embedded credentials")
+        return parsed.scheme, parsed.hostname.lower(), parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise BitbucketExportError("Invalid HTTP request destination.") from exc
+
+
+def _check_origin(source: str, destination: str) -> None:
+    if _origin(source) != _origin(destination):
+        raise BitbucketExportError("Refusing to forward credentials to a different origin. Use the final API base URL directly.")
+
+
+class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_origin(req.full_url, newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def auth_headers(token: str, username: str | None = None) -> dict[str, str]:
     """Build Bitbucket auth headers without persisting credentials."""
     if username:
@@ -63,12 +89,13 @@ def fetch_json(
     sleep_seconds: float = 2.0,
 ) -> Any:
     """Fetch JSON from a URL, retrying one transient 5xx failure."""
+    _origin(url)
     request_headers = {"Accept": "application/json"}
     request_headers.update(headers or {})
     request = urllib.request.Request(url, headers=request_headers)
 
     try:
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.build_opener(_SameOriginRedirectHandler()).open(request, timeout=DEFAULT_TIMEOUT) as response:
             body = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         error = _to_http_error(exc)
@@ -79,9 +106,15 @@ def fetch_json(
     except urllib.error.URLError as exc:
         raise NetworkError(str(exc.reason), url) from exc
 
-    if not body:
-        return None
-    return json.loads(body)
+    except (OSError, http.client.HTTPException) as exc:
+        raise NetworkError(str(exc), url) from exc
+    except UnicodeDecodeError as exc:
+        raise BitbucketExportError(f"Invalid UTF-8 response from {url}") from exc
+
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise BitbucketExportError(f"Invalid or empty JSON response from {url}") from exc
 
 
 def paginate_cloud(first_url: str, headers: dict[str, str]) -> list[dict[str, Any]]:
@@ -89,11 +122,15 @@ def paginate_cloud(first_url: str, headers: dict[str, str]) -> list[dict[str, An
     values: list[dict[str, Any]] = []
     url: str | None = first_url
     while url:
+        _check_origin(first_url, url)
         page = fetch_json(url, headers)
         if not isinstance(page, dict):
             raise BitbucketExportError(f"Expected JSON object from {url}")
         values.extend(_ensure_dict_items(page.get("values", [])))
-        url = page.get("next")
+        next_url = page.get("next")
+        if next_url is not None and not isinstance(next_url, str):
+            raise BitbucketExportError("Invalid pagination destination.")
+        url = urljoin(url, next_url) if next_url else None
     return values
 
 
