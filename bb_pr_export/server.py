@@ -13,7 +13,7 @@ def export_pull_request(
     project: str,
     repo: str,
     pr_id: str,
-    token: str,
+    token: str | None,
     username: str | None = None,
 ) -> dict[str, Any]:
     headers = auth_headers(token, username)

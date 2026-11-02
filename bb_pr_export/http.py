@@ -73,8 +73,10 @@ class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def auth_headers(token: str, username: str | None = None) -> dict[str, str]:
+def auth_headers(token: str | None, username: str | None = None) -> dict[str, str]:
     """Build Bitbucket auth headers without persisting credentials."""
+    if token is None:
+        return {}
     if username:
         raw = f"{username}:{token}".encode("utf-8")
         encoded = base64.b64encode(raw).decode("ascii")

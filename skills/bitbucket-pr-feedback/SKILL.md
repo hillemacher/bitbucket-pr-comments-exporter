@@ -27,15 +27,28 @@ JSON only after the command succeeds. Read all discussions, in chunks if needed;
 disclose incomplete retrieval or reading rather than presenting a partial brief
 as complete. Remove temporary output when finished unless the user wants it saved.
 
-Prerequisites are Python 3.11+ and `BB_TOKEN` in the execution environment.
-Server/Data Center may also use `BB_USERNAME`. Existing non-secret defaults are
+Prerequisites are Python 3.11+ and sandbox networking with egress credential
+injection already configured, including proxy routing and certificate trust.
+The default authentication mode is `egress`: Python sends no Authorization
+header and ignores local credentials, including `BB_TOKEN` and `BB_USERNAME`.
+The egress server injects authentication. Allowed destinations and GET-only
+access must be enforced by the egress policy; this skill does not configure or
+enforce that policy. Do not change URLs to a gateway or disable TLS verification.
+
+For explicitly requested local use outside this sandbox, append
+`--auth-mode token`. That mode requires `BB_TOKEN` and optionally `BB_USERNAME`
+for Server/Data Center. Never switch to token mode automatically after a failure.
+
+Existing non-secret defaults are
 read from `./bb-export.toml`, then `~/.config/bb-export/config.toml` (the first
 existing file wins). The URL supplies the PR identity; output is always JSON at
 the explicit destination. Deleted-comment inclusion follows existing config
 and defaults to false.
 
-If Python, credentials, or configuration are missing, explain the local setup
-needed. Ask the user to configure credentials locally, never paste them in chat.
+If Python or configuration is missing, explain the setup needed. In egress
+mode, authentication or access failures require checking egress access rules and
+credential injection; do not ask for a local token. In explicit token mode, ask
+the user to configure missing credentials locally, never paste them in chat.
 Do not print environment variables or place credentials in commands or config.
 For authentication, network, or output failures, report the exporter error and
 what the user can correct. Do not analyze a stale file after a failed export.

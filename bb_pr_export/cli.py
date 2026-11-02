@@ -43,8 +43,8 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    token = args.token or os.environ.get("BB_TOKEN")
-    if not token:
+    token = (args.token or os.environ.get("BB_TOKEN")) if args.auth_mode == "token" else None
+    if args.auth_mode == "token" and not token:
         print("Missing token. Pass --token or set BB_TOKEN.", file=sys.stderr)
         return 1
 
@@ -59,7 +59,9 @@ def main(argv: list[str] | None = None) -> int:
             raise BitbucketExportError(f"Could not write output '{output_path}': {exc.strerror or str(exc)}") from exc
     except AuthError:
         print(
-            ("Authentication failed. Check that the API token is valid and has read:pullrequest:bitbucket scope."
+            ("Authentication failed. Check the egress access rules and credential injection setup."
+             if args.auth_mode == "egress" else
+             "Authentication failed. Check that the API token is valid and has read:pullrequest:bitbucket scope."
              if args.provider == "cloud" else
              "Authentication failed. Check that the token is valid and has repository/pull request read access."),
             file=sys.stderr,
@@ -80,12 +82,12 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _fetch_export(args: argparse.Namespace, token: str) -> dict[str, Any]:
+def _fetch_export(args: argparse.Namespace, token: str | None) -> dict[str, Any]:
     match args.provider:
         case "cloud":
             return cloud.export_pull_request(args.workspace, args.repo, args.pr, token)
         case "server":
-            username = args.username or os.environ.get("BB_USERNAME")
+            username = (args.username or os.environ.get("BB_USERNAME")) if args.auth_mode == "token" else None
             return server.export_pull_request(args.server, args.project, args.repo, args.pr, token, username)
         case _:
             raise BitbucketExportError(f"Unknown provider: {args.provider}")
@@ -293,6 +295,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _add_shared_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--auth-mode", choices=("token", "egress"), default="token",
+        help="Authentication source: local token (default) or egress credential injection",
+    )
     parser.add_argument("--token")
     parser.add_argument("--url", help="Bitbucket pull request URL")
     parser.add_argument("--config", help="Path to a TOML config file")

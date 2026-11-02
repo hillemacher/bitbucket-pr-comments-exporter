@@ -36,8 +36,14 @@ class SkillWrapperTests(unittest.TestCase):
             with self.subTest(url=url), patch.object(wrapper.cli, "main", return_value=1) as main:
                 self.assertEqual(wrapper.main([url, "--output", "result.json"]), 1)
                 main.assert_called_once_with([
-                    provider, "--url", url, "--format", "json", "--output", "result.json"
+                    provider, "--url", url, "--format", "json", "--output", "result.json",
+                    "--auth-mode", "egress",
                 ])
+
+    def test_explicit_token_mode(self):
+        with patch.object(wrapper.cli, "main", return_value=0) as main:
+            self.assertEqual(wrapper.main([CLOUD_URL, "--output", "out.json", "--auth-mode", "token"]), 0)
+            self.assertEqual(main.call_args.args[0][-2:], ["--auth-mode", "token"])
 
     def test_rejects_missing_or_unsupported_inputs_before_export(self):
         invalid = [
@@ -76,7 +82,9 @@ class SkillWrapperTests(unittest.TestCase):
                 with patch.dict(os.environ, {"BB_TOKEN": "test-token"}, clear=True), patch(
                     "bb_pr_export.cli.server.export_pull_request", return_value=EXPORT
                 ) as export, contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(wrapper.main([SERVER_URL, "--output", "review.json"]), 0)
+                    self.assertEqual(wrapper.main([
+                        SERVER_URL, "--output", "review.json", "--auth-mode", "token"
+                    ]), 0)
                     self.assertEqual(Path.cwd(), Path(directory).resolve())
                     self.assertEqual(json.loads(Path("review.json").read_text()), EXPORT)
                     export.assert_called_once_with(
@@ -95,7 +103,9 @@ class SkillWrapperTests(unittest.TestCase):
                     "bb_pr_export.cli.DEFAULT_CONFIG_PATHS", ()
                 ), patch("bb_pr_export.cli.cloud.export_pull_request", side_effect=failure) as export:
                     with contextlib.redirect_stderr(errors):
-                        self.assertEqual(wrapper.main([CLOUD_URL, "--output", str(output)]), 1)
+                        self.assertEqual(wrapper.main([
+                            CLOUD_URL, "--output", str(output), "--auth-mode", "token"
+                        ]), 1)
                     if failure is None:
                         export.assert_not_called()
                 self.assertFalse(output.exists())
@@ -154,7 +164,10 @@ class SkillBundleTests(unittest.TestCase):
                 archive.extractall(temporary / "installed")
             scripts = temporary / "installed" / SKILL_NAME / "scripts"
             # -S excludes site-packages; clearing PYTHONPATH excludes the checkout.
-            environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+            environment = {
+                key: value for key, value in os.environ.items()
+                if key not in {"PYTHONPATH", "BB_TOKEN", "BB_USERNAME"}
+            }
             result = subprocess.run(
                 [sys.executable, "-S", str(scripts / "export_pr.py"), "--help"],
                 cwd=temporary, env=environment, capture_output=True, text=True, timeout=10,
@@ -169,12 +182,14 @@ class SkillBundleTests(unittest.TestCase):
                 "cli.DEFAULT_CONFIG_PATHS = (); "
                 f"export = {EXPORT!r}; "
                 "mock = patch('bb_pr_export.cli.cloud.export_pull_request', return_value=export); "
-                "mock.start(); "
-                "raise SystemExit(export_pr.main([sys.argv[2], '--output', sys.argv[3]]))"
+                "provider = mock.start(); "
+                "result = export_pr.main([sys.argv[2], '--output', sys.argv[3]]); "
+                "provider.assert_called_once_with('workspace', 'repo', '42', None); "
+                "raise SystemExit(result)"
             )
             result = subprocess.run(
                 [sys.executable, "-S", "-c", harness, str(scripts), CLOUD_URL, "review.json"],
-                cwd=temporary, env={**environment, "BB_TOKEN": "test-token"},
+                cwd=temporary, env=environment,
                 capture_output=True, text=True, timeout=10,
             )
             self.assertEqual(result.returncode, 0, result.stderr)

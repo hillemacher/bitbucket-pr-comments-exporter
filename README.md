@@ -73,10 +73,18 @@ bundled Python modules under `scripts/bb_pr_export`. Other agents can use the
 same extracted folder in their supported skill location. When updating, replace
 the previous skill folder with the newly built bundle.
 
-Configure `BB_TOKEN` in the environment inherited by the agent's shell, using
-the token requirements below. Server/Data Center can also use `BB_USERNAME`.
-Never paste credentials into chat or put them in the skill or TOML config.
-Then ask, for example:
+The skill defaults to `--auth-mode egress`, for sandboxes whose egress server
+injects credentials. Python sends no Authorization header and ignores local
+credential inputs, including `BB_TOKEN` and `BB_USERNAME`. Routing, proxy settings,
+and certificate trust must already be configured. The egress policy must enforce
+allowed destinations and HTTP methods (GET-only for this exporter); the skill
+does not configure or enforce those restrictions. Normal Bitbucket URLs are used.
+
+For local use outside that sandbox, explicitly append `--auth-mode token` to
+the bundled command and configure `BB_TOKEN` in the agent's shell environment.
+Server/Data Center can also use `BB_USERNAME`. There is no automatic fallback
+from egress to token authentication. Never paste credentials into chat or put
+them in the skill or TOML config. Then ask, for example:
 
 ```text
 Use $bitbucket-pr-feedback to summarize the feedback on https://bitbucket.org/WORKSPACE/REPO/pull-requests/42
@@ -127,6 +135,23 @@ BB_TOKEN=TOKEN bb-export server --config bb-export.toml --pr 500
 ```
 
 CLI flags override values parsed from `--url`; URL values override config; config fills missing defaults. Credentials are never read from config files. Use `--token` or `BB_TOKEN`.
+
+## Authentication modes
+
+The standalone CLI defaults to `--auth-mode token`, preserving local credential
+handling. To use an already-configured credential-injecting egress server:
+
+```bash
+bb-export cloud --url https://bitbucket.org/WORKSPACE/REPO/pull-requests/42 --auth-mode egress
+bb-export server --url https://host/projects/PROJECT/repos/REPO/pull-requests/42 --auth-mode egress
+```
+
+Egress mode bypasses the token requirement and ignores local token and username
+inputs, including explicit flags and environment variables. Python sends neither
+Bearer nor Basic authentication. Authentication failures should be resolved in
+the egress access rules or injection configuration; token mode is never selected
+as a fallback. Authentication mode is selected only through command-line options,
+not TOML configuration. The bundled skill defaults to egress mode instead.
 
 ## Tokens
 
