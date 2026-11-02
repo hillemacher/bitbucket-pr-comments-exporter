@@ -61,6 +61,46 @@ class ServerTests(unittest.TestCase):
             {"path": "src/object-path.py", "line": 7, "side": "old"},
         )
 
+class ThreadTests(unittest.TestCase):
+    def test_nested_thread_normalization_and_rendering(self):
+        from bb_pr_export.server import _normalize_comments_from_activities
+        from bb_pr_export.renderer import render_markdown
+        activities = [{'commentAnchor': {'path': 'src/a.py', 'line': 9, 'lineType': 'CONTEXT', 'fileType': 'FROM'},
+                       'comment': {'id': 1, 'text': 'root text', 'comments': [
+                           {'id': 2, 'text': 'reply text', 'comments': [{'id': 3, 'text': 'grandchild text'}]}]}},
+                      {'comment': {'id': 4, 'text': 'general text'}}]
+        comments = _normalize_comments_from_activities(activities)
+        self.assertEqual([c['parent_id'] for c in comments], [None, 1, 2, None])
+        self.assertTrue(all(c['location'] == {'path': 'src/a.py', 'line': 9, 'side': 'old'} for c in comments[:3]))
+        markdown = render_markdown({'pr': {'id': 1}, 'comments': comments})
+        self.assertIn('`src/a.py` line 9 (old)', markdown)
+        for body in ('root text', 'reply text', 'grandchild text', 'general text'):
+            self.assertEqual(markdown.count(body), 1)
+        self.assertIn('3 inline, 1 general', markdown)
+        self.assertLess(markdown.index('root text'), markdown.index('reply text'))
+        self.assertLess(markdown.index('reply text'), markdown.index('grandchild text'))
+
+    def test_explicit_parent_and_own_anchor_override_inheritance(self):
+        from bb_pr_export.server import _normalize_comments_from_activities
+        comments = _normalize_comments_from_activities([{'commentAnchor': {'path': 'a.py'}, 'comment': {
+            'id': 1, 'comments': [{'id': 2, 'parent': {'id': 7}, 'anchor': {'path': 'b.py', 'lineType': 'CONTEXT', 'fileType': 'TO'}}]}}])
+        self.assertEqual(comments[1]['parent_id'], 7)
+        self.assertEqual(comments[1]['location'], {'path': 'b.py', 'line': None, 'side': 'new'})
+
+    def test_duplicate_snapshots_preserve_context_and_newest_body(self):
+        from bb_pr_export.server import _normalize_comments_from_activities
+        nested = {'commentAnchor': {'path': 'a.py'}, 'comment': {'id': 1, 'comments': [{'id': 2, 'text': 'old', 'updatedDate': 1}]}}
+        latest = {'comment': {'id': 2, 'text': 'new', 'updatedDate': 2}}
+        for activities in ([nested, latest], [latest, nested]):
+            comments = _normalize_comments_from_activities(activities)
+            self.assertEqual(len(comments), 2)
+            reply = next(c for c in comments if c['id'] == 2)
+            self.assertEqual(reply['body'], 'new')
+            self.assertEqual(reply['parent_id'], 1)
+            self.assertEqual(reply['location']['path'], 'a.py')
+        tied = _normalize_comments_from_activities([latest, {'comment': {'id': 2, 'text': 'tie', 'updatedDate': 2}}])
+        self.assertEqual(tied[0]['body'], 'new')
+
 
 if __name__ == "__main__":
     unittest.main()

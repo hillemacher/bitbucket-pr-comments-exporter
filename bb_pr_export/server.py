@@ -59,19 +59,56 @@ def _normalize_reviewers(pr: dict[str, Any]) -> list[dict[str, str]]:
 
 def _normalize_comments_from_activities(activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     comments: list[dict[str, Any]] = []
+    by_id: dict[str, tuple[dict[str, Any], int]] = {}
+
+    def visit(
+        comment: dict[str, Any], activity: dict[str, Any],
+        parent_id: Any = None, inherited_anchor: dict[str, Any] | None = None,
+    ) -> None:
+        anchor = comment.get("anchor")
+        if not isinstance(anchor, dict) or not anchor:
+            anchor = inherited_anchor or {}
+        normalized = _normalize_comment(comment, activity, anchor=anchor, parent_id=parent_id)
+        comment_id = normalized["id"]
+        try:
+            updated = int(comment.get("updatedDate") or 0)
+        except (TypeError, ValueError):
+            updated = 0
+        key = str(comment_id)
+        if comment_id is None or key not in by_id:
+            comments.append(normalized)
+            if comment_id is not None:
+                by_id[key] = (normalized, updated)
+        else:
+            existing, previous_updated = by_id[key]
+            preferred, fallback = (normalized, existing) if updated > previous_updated else (existing, normalized)
+            merged = dict(preferred)
+            for field in ("parent_id", "location"):
+                if merged[field] is None:
+                    merged[field] = fallback[field]
+            merged["inline"] = merged["location"] is not None
+            existing.update(merged)
+            by_id[key] = (existing, max(updated, previous_updated))
+        for child in comment.get("comments") or []:
+            if isinstance(child, dict):
+                visit(child, activity, comment_id, anchor)
+
     for activity in activities:
         comment = activity.get("comment")
         if isinstance(comment, dict):
-            comments.append(_normalize_comment(comment, activity))
+            anchor = activity.get("commentAnchor")
+            visit(comment, activity, inherited_anchor=anchor if isinstance(anchor, dict) else None)
     return comments
 
 
-def _normalize_comment(comment: dict[str, Any], activity: dict[str, Any]) -> dict[str, Any]:
-    anchor = comment.get("anchor") if isinstance(comment.get("anchor"), dict) else {}
+def _normalize_comment(
+    comment: dict[str, Any], activity: dict[str, Any], *,
+    anchor: dict[str, Any], parent_id: Any = None,
+) -> dict[str, Any]:
     parent = comment.get("parent") if isinstance(comment.get("parent"), dict) else None
     return {
         "id": comment.get("id"),
-        "parent_id": parent.get("id") if parent else None,
+        "parent_id": parent.get("id", parent_id) if parent else parent_id,
         "author": _display_user(comment.get("author") or activity.get("user")),
         "created": _millis_to_iso(comment.get("createdDate") or activity.get("createdDate")),
         "body": comment.get("text") or "",
@@ -87,7 +124,9 @@ def _anchor_location(anchor: dict[str, Any]) -> dict[str, Any] | None:
         return None
     line = anchor.get("line")
     line_type = (anchor.get("lineType") or "").upper()
-    side = "old" if line_type == "REMOVED" else "new" if line_type else None
+    side = "old" if line_type == "REMOVED" else "new" if line_type == "ADDED" else None
+    if line_type == "CONTEXT":
+        side = {"FROM": "old", "TO": "new"}.get((anchor.get("fileType") or "").upper())
     return {
         "path": _anchor_path(anchor),
         "line": line,
