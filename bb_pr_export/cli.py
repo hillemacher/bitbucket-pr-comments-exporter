@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         export = _fetch_export(args, token)
         output_path = _output_path(args)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        content = render_json(export) if args.format == "json" else render_markdown(export, include_deleted=args.include_deleted)
+        content = render_json(export, include_deleted=args.include_deleted) if args.format == "json" else render_markdown(export, include_deleted=args.include_deleted)
         output_path.write_text(content, encoding="utf-8")
     except AuthError:
         print(
@@ -169,7 +169,8 @@ def _resolve_args(args: argparse.Namespace, config: dict[str, Any]) -> argparse.
     for key in ("output", "output_dir", "format", "include_deleted"):
         setattr(resolved, key, _first_present(getattr(args, key, None), defaults.get(key)))
     resolved.format = resolved.format or "md"
-    resolved.include_deleted = bool(resolved.include_deleted)
+    if resolved.include_deleted is None:
+        resolved.include_deleted = False
 
     if args.provider == "server":
         resolved.username = _first_present(args.username, provider_config.get("username"), defaults.get("username"))

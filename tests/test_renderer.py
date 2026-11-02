@@ -128,6 +128,23 @@ class RendererTests(unittest.TestCase):
 
         self.assertIn("> ~~[deleted]~~", markdown)
 
+class JsonTests(unittest.TestCase):
+    def test_deleted_filtering_and_input_immutability(self):
+        import copy
+        import json
+        from bb_pr_export.renderer import render_json
+        export = {'pr': {'id': 1}, 'comments': [
+            {'id': 1, 'deleted': True, 'body': 'hidden'},
+            {'id': 2, 'parent_id': 1, 'body': 'visible reply'}]}
+        original = copy.deepcopy(export)
+        self.assertEqual([c['id'] for c in json.loads(render_json(export))['comments']], [2])
+        self.assertEqual(json.loads(render_json(export, include_deleted=True)), original)
+        markdown = render_markdown(export)
+        self.assertIn('visible reply', markdown)
+        self.assertNotIn('hidden', markdown)
+        self.assertIn('~~[deleted]~~', render_markdown(export, include_deleted=True))
+        self.assertEqual(export, original)
+
 
 if __name__ == "__main__":
     unittest.main()

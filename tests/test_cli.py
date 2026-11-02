@@ -183,6 +183,37 @@ token = "secret"
         self.assertEqual(exit_code, 1)
         self.assertIn("Missing required option", stderr.getvalue())
 
+class DeletedOptionTests(unittest.TestCase):
+    def test_boolean_validation_and_cli_precedence(self):
+        from bb_pr_export.cli import _build_parser, _resolve_args, _validate_args
+        from bb_pr_export.http import BitbucketExportError
+        flags = ['cloud', '--workspace', 'w', '--repo', 'r', '--pr', '1']
+        for value in ('false', 0, 1, [], {}):
+            with self.subTest(value=value):
+                args = _resolve_args(_build_parser().parse_args(flags), {'defaults': {'include_deleted': value}})
+                with self.assertRaises(BitbucketExportError):
+                    _validate_args(args)
+        for config, expected in (({}, False), ({'defaults': {'include_deleted': False}}, False), ({'defaults': {'include_deleted': True}}, True)):
+            args = _resolve_args(_build_parser().parse_args(flags), config)
+            _validate_args(args)
+            self.assertIs(args.include_deleted, expected)
+        args = _resolve_args(_build_parser().parse_args(flags + ['--include-deleted']), {'defaults': {'include_deleted': False}})
+        self.assertIs(args.include_deleted, True)
+
+    @patch.dict('os.environ', {'BB_TOKEN': 'dummy'}, clear=True)
+    @patch('bb_pr_export.cli._load_config', return_value={})
+    @patch('bb_pr_export.cli.cloud.export_pull_request')
+    def test_json_flag_reaches_renderer(self, fetch, load):
+        import json
+        fetch.return_value = {**EXPORT, 'comments': [{'id': 1, 'deleted': True, 'body': 'deleted'}]}
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'out.json'
+            flags = ['cloud', '--workspace', 'w', '--repo', 'r', '--pr', '1', '--format', 'json', '--output', str(output)]
+            for extra, expected in (([], []), (['--include-deleted'], fetch.return_value['comments'])):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(flags + extra), 0)
+                self.assertEqual(json.loads(output.read_text())['comments'], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,8 +8,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-def render_json(export: dict[str, Any]) -> str:
-    return json.dumps(export, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+def render_json(export: dict[str, Any], *, include_deleted: bool = False) -> str:
+    filtered = {**export, "comments": _filter_comments(export.get("comments", []), include_deleted)}
+    return json.dumps(filtered, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 def render_markdown(export: dict[str, Any], *, include_deleted: bool = False) -> str:
