@@ -21,8 +21,8 @@ pipx install .
 Bitbucket Cloud:
 
 ```bash
-bb-export cloud --workspace WORKSPACE --repo REPO --pr 42 --token APP_PASSWORD
-bb-export cloud --url https://bitbucket.org/WORKSPACE/REPO/pull-requests/42 --token APP_PASSWORD
+bb-export cloud --workspace WORKSPACE --repo REPO --pr 42 --token API_TOKEN
+bb-export cloud --url https://bitbucket.org/WORKSPACE/REPO/pull-requests/42 --token API_TOKEN
 ```
 
 Bitbucket Server/Data Center:
@@ -35,11 +35,11 @@ bb-export server --url https://bitbucket.example.com/projects/PROJECT/repos/REPO
 You can also provide secrets with environment variables:
 
 ```bash
-BB_TOKEN=APP_PASSWORD bb-export cloud --workspace WORKSPACE --repo REPO --pr 42
+BB_TOKEN=API_TOKEN bb-export cloud --workspace WORKSPACE --repo REPO --pr 42
 BB_USERNAME=USERNAME BB_TOKEN=TOKEN bb-export server --server https://bitbucket.example.com --project PROJECT --repo REPO --pr 42
 ```
 
-Use `--output FILE` to choose the destination, `--include-deleted` to include deleted comments as `~~[deleted]~~`, and `--format json` to write normalized JSON instead of Markdown.
+Use `--output FILE` to choose the destination and `--format json` to write normalized JSON instead of Markdown. Deleted comments are omitted in both formats by default. With `--include-deleted`, Markdown shows `~~[deleted]~~`; JSON includes the normalized records with `deleted: true` and any body supplied by Bitbucket. Visible replies are retained even when their deleted parent is omitted.
 
 ## Config File
 
@@ -66,13 +66,21 @@ Then export a PR with only the changing value:
 BB_TOKEN=TOKEN bb-export server --config bb-export.toml --pr 500
 ```
 
-CLI flags override values parsed from `--url`; URL values override config; config fills missing defaults. Tokens and app passwords are never read from config files. Use `--token` or `BB_TOKEN`.
+CLI flags override values parsed from `--url`; URL values override config; config fills missing defaults. Credentials are never read from config files. Use `--token` or `BB_TOKEN`.
 
 ## Tokens
 
-For Bitbucket Cloud, generate an app password with Pull Requests: Read permission. See: Bitbucket Cloud app passwords.
+For Bitbucket Cloud, create a scoped API token with `read:pullrequest:bitbucket` permission. Pass it with `--token` or `BB_TOKEN`; the exporter uses Bearer authentication, so no username or email is required. App passwords are no longer supported. See [using API tokens](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/) and [pull request API scopes](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
 
 For Bitbucket Server/Data Center, generate a personal access token with pull request read access. See: Bitbucket Server personal access tokens.
+
+## Request and Output Errors
+
+HTTP connections and reads use a 30-second socket-operation timeout; this is not an overall export deadline. A transient HTTP 5xx response is retried once after two seconds. Timeouts, invalid responses, and rejected redirects are not retried.
+
+Redirects and Cloud pagination links must stay on the original origin (scheme, hostname, and port). Cross-origin redirects, including HTTPS downgrades, are rejected before forwarding credentials. If your server redirects to another host, configure its final API base URL directly.
+
+Network, response decoding, and output filesystem failures produce an error on stderr and exit code `1`.
 
 ## Output Format
 

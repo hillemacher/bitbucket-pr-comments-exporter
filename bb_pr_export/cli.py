@@ -59,7 +59,9 @@ def main(argv: list[str] | None = None) -> int:
             raise BitbucketExportError(f"Could not write output '{output_path}': {exc.strerror or str(exc)}") from exc
     except AuthError:
         print(
-            "Authentication failed. Check that the token/app password is valid and has Pull Requests: Read scope.",
+            ("Authentication failed. Check that the API token is valid and has read:pullrequest:bitbucket scope."
+             if args.provider == "cloud" else
+             "Authentication failed. Check that the token is valid and has repository/pull request read access."),
             file=sys.stderr,
         )
         return 1

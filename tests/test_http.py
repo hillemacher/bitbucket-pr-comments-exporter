@@ -79,10 +79,6 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(values, [{"id": 1}])
         sleep.assert_called_once_with(2.0)
 
-
-if __name__ == "__main__":
-    unittest.main()
-
 class SafetyTests(unittest.TestCase):
     def test_redirects_block_other_origins_before_request(self):
         import urllib.request
@@ -142,3 +138,47 @@ class SafetyTests(unittest.TestCase):
         for module, args in ((cloud, ('w', 'r', '1', 'dummy')), (server, ('https://api.example', 'P', 'r', '1', 'dummy'))):
             with patch.object(module, 'fetch_json', return_value=[]), self.assertRaises(BitbucketExportError):
                 module.export_pull_request(*args)
+
+
+class RedirectTransportTests(unittest.TestCase):
+    def test_opener_rejects_destinations_before_transport(self):
+        import email.message
+        import urllib.request
+        import urllib.response
+        from bb_pr_export.http import BitbucketExportError, fetch_json
+        build_opener = urllib.request.build_opener
+        for target in ('https://other.example/end', 'http://api.example/end', 'https://api.example:444/end', 'https://api.example:0/end', 'https://api.example/end'):
+            seen = []
+
+            class Transport(urllib.request.HTTPSHandler):
+                def https_open(self, request):
+                    seen.append(request)
+                    headers = email.message.Message()
+                    redirected = request.full_url.endswith('/start')
+                    if redirected:
+                        headers['Location'] = target
+                    response = urllib.response.addinfourl(io.BytesIO(b'{}'), headers, request.full_url, 302 if redirected else 200)
+                    response.msg = 'Found' if redirected else 'OK'
+                    return response
+
+            with self.subTest(target=target), patch('urllib.request.build_opener', side_effect=lambda *handlers: build_opener(Transport(), *handlers)):
+                if target == 'https://api.example/end':
+                    self.assertEqual(fetch_json('https://api.example/start', {'Authorization': 'Bearer dummy'}), {})
+                    self.assertEqual(len(seen), 2)
+                    self.assertEqual(seen[1].get_header('Authorization'), 'Bearer dummy')
+                else:
+                    with self.assertRaises(BitbucketExportError):
+                        fetch_json('https://api.example/start', {'Authorization': 'Bearer dummy'})
+                    self.assertEqual(len(seen), 1)
+
+    @patch('urllib.request.OpenerDirector.open')
+    def test_non_json_http_error_does_not_print_body(self, open_request):
+        from bb_pr_export.http import HttpError, fetch_json
+        open_request.side_effect = urllib.error.HTTPError('https://api.example/pr', 400, 'Bad request', {}, io.BytesIO(b'private response'))
+        with self.assertRaises(HttpError) as raised:
+            fetch_json('https://api.example/pr')
+        self.assertNotIn('private response', str(raised.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

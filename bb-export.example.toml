@@ -5,12 +5,13 @@
 # or pass it explicitly with:
 #   bb-export server --config bb-export.toml --pr 500
 #
-# Do not put tokens, app passwords, or personal access tokens in this file.
+# Do not put API tokens or personal access tokens in this file.
 # Use --token or the BB_TOKEN environment variable for secrets.
 
 [server]
 # Base URL for Bitbucket Server/Data Center. If Bitbucket is hosted under a
 # context path, include it here, for example "https://company.example/bitbucket".
+# Use the final API host: redirects to another origin are rejected.
 server = "https://bitbucket.CompanyX"
 
 # Static repository location. These can still be overridden by CLI flags or
@@ -24,6 +25,7 @@ username = "your.username"
 
 [cloud]
 # Use this section instead of [server] for Bitbucket Cloud defaults.
+# Supply a scoped API token with read:pullrequest:bitbucket using --token or BB_TOKEN.
 # workspace = "your-workspace"
 # repo = "your-repo"
 
@@ -35,5 +37,8 @@ output_dir = "exports"
 # Output format: "md" for LLM-friendly Markdown, or "json" for normalized data.
 format = "md"
 
-# Include deleted comments as ~~[deleted]~~. By default they are omitted.
+# HTTP socket operations have a fixed 30-second timeout, including retries.
+
+# Omit deleted comments in both formats by default. If true, Markdown shows
+# ~~[deleted]~~ and JSON retains deleted records and any provider-supplied body.
 include_deleted = false

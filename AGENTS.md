@@ -32,7 +32,7 @@ Use Python 3.11+ and standard library APIs only. Prefer clear functions, type hi
 
 ## Testing Guidelines
 
-Tests use `unittest` and `unittest.mock`. Name files `tests/test_*.py` and test classes `*Tests`. Patch provider functions or `urllib.request.urlopen`; never require real Bitbucket credentials or network access. Add CLI behavior tests in `tests/test_cli.py`, renderer fixture tests in `tests/test_renderer.py`, and HTTP pagination/error tests in `tests/test_http.py`.
+Tests use `unittest` and `unittest.mock`. Name files `tests/test_*.py` and test classes `*Tests`. Patch provider functions or the private urllib opener; never require real Bitbucket credentials or network access. Add CLI behavior tests in `tests/test_cli.py`, renderer fixture tests in `tests/test_renderer.py`, and HTTP pagination/error tests in `tests/test_http.py`.
 
 ## Commit & Pull Request Guidelines
 

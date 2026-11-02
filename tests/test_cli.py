@@ -233,5 +233,21 @@ class OutputErrorTests(unittest.TestCase):
                 self.assertEqual(stdout.getvalue(), '')
 
 
+class AuthenticationMessageTests(unittest.TestCase):
+    @patch.dict('os.environ', {'BB_TOKEN': 'dummy'}, clear=True)
+    @patch('bb_pr_export.cli._load_config', return_value={})
+    def test_provider_specific_authentication_guidance(self, load):
+        from bb_pr_export.http import AuthError
+        cases = [(['cloud', '--workspace', 'w', '--repo', 'r'], 'read:pullrequest:bitbucket'),
+                 (['server', '--server', 'https://api.example', '--project', 'P', '--repo', 'r'], 'read access')]
+        for flags, expected in cases:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with patch('bb_pr_export.cli._fetch_export', side_effect=AuthError(401, 'unauthorized', 'https://api.example')), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(flags + ['--pr', '1']), 1)
+            self.assertIn(expected, stderr.getvalue())
+            self.assertNotIn('dummy', stderr.getvalue())
+            self.assertEqual(stdout.getvalue(), '')
+
+
 if __name__ == "__main__":
     unittest.main()

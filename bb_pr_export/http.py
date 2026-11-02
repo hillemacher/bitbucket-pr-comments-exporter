@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import base64
-import json
 import http.client
+import json
 import time
 import urllib.error
 import urllib.request
@@ -56,7 +56,8 @@ def _origin(url: str) -> tuple[str, str, int]:
         parsed = urlsplit(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username is not None:
             raise ValueError("Expected an HTTP(S) URL without embedded credentials")
-        return parsed.scheme, parsed.hostname.lower(), parsed.port or (443 if parsed.scheme == "https" else 80)
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
+        return parsed.scheme, parsed.hostname.lower(), port
     except ValueError as exc:
         raise BitbucketExportError("Invalid HTTP request destination.") from exc
 
@@ -105,7 +106,6 @@ def fetch_json(
         raise error from exc
     except urllib.error.URLError as exc:
         raise NetworkError(str(exc.reason), url) from exc
-
     except (OSError, http.client.HTTPException) as exc:
         raise NetworkError(str(exc), url) from exc
     except UnicodeDecodeError as exc:
@@ -175,7 +175,7 @@ def _read_error_message(exc: urllib.error.HTTPError) -> str:
     try:
         parsed = json.loads(body)
     except json.JSONDecodeError:
-        return body
+        return exc.reason or "request failed"
     if isinstance(parsed, dict):
         error = parsed.get("error")
         if isinstance(error, dict) and isinstance(error.get("message"), str):
@@ -186,4 +186,4 @@ def _read_error_message(exc: urllib.error.HTTPError) -> str:
             first = parsed["errors"][0]
             if isinstance(first, dict) and isinstance(first.get("message"), str):
                 return first["message"]
-    return body
+    return exc.reason or "request failed"
