@@ -41,6 +41,66 @@ BB_USERNAME=USERNAME BB_TOKEN=TOKEN bb-export server --server https://bitbucket.
 
 Use `--output FILE` to choose the destination and `--format json` to write normalized JSON instead of Markdown. Deleted comments are omitted in both formats by default. With `--include-deleted`, Markdown shows `~~[deleted]~~`; JSON includes the normalized records with `deleted: true` and any body supplied by Bitbucket. Visible replies are retained even when their deleted parent is omitted.
 
+## Agent Skill
+
+The self-contained **bitbucket-pr-feedback** skill lets a local coding agent
+retrieve feedback from one PR URL and summarize reviewer decisions, discussion
+threads, candidate action items, and open questions. It supports Bitbucket Cloud
+and Server/Data Center. Users need Python 3.11+; installing `bb-export` separately
+is unnecessary.
+
+Build the installable ZIP from a checkout:
+
+```bash
+python3 tools/build_skill.py
+```
+
+This writes `dist/bitbucket-pr-feedback.zip`. The builder packages the skill
+instructions, a thin URL wrapper, the MIT license, and the maintained
+`bb_pr_export` source. Generated bundles are ignored by Git; rebuild after
+exporter or skill changes. The source skill folder alone is not self-contained.
+
+Extract the ZIP into your agent's skill directory. For example, for a personal
+Codex skill:
+
+```bash
+mkdir -p "$HOME/.agents/skills"
+unzip dist/bitbucket-pr-feedback.zip -d "$HOME/.agents/skills"
+```
+
+The result should be `~/.agents/skills/bitbucket-pr-feedback/SKILL.md`, with the
+bundled Python modules under `scripts/bb_pr_export`. Other agents can use the
+same extracted folder in their supported skill location. When updating, replace
+the previous skill folder with the newly built bundle.
+
+Configure `BB_TOKEN` in the environment inherited by the agent's shell, using
+the token requirements below. Server/Data Center can also use `BB_USERNAME`.
+Never paste credentials into chat or put them in the skill or TOML config.
+Then ask, for example:
+
+```text
+Use $bitbucket-pr-feedback to summarize the feedback on https://bitbucket.org/WORKSPACE/REPO/pull-requests/42
+What follow-up actions do reviewers suggest on https://host/projects/PROJECT/repos/REPO/pull-requests/42/overview?
+```
+
+The agent runs the bundled entry point with a unique temporary output path:
+
+```bash
+python3 /absolute/path/to/bitbucket-pr-feedback/scripts/export_pr.py \
+  'https://bitbucket.org/WORKSPACE/REPO/pull-requests/42' \
+  --output /absolute/path/to/temporary-directory/review.json
+```
+
+Only one HTTP(S) PR URL is accepted, with a numeric PR ID. Bare PR numbers and
+embedded credentials are rejected. Existing config discovery uses the caller's
+working directory; URL values supply the PR identity, JSON output is forced,
+and deleted-comment inclusion follows config (false by default).
+
+The brief references comment IDs and file locations. It interprets replies but
+cannot verify that feedback has been addressed: exports contain neither code
+diffs nor normalized thread-resolution status. The skill retrieves and explains
+feedback; it does not modify code or write to Bitbucket.
+
 ## Config File
 
 You can save non-secret defaults in TOML. By default, the tool looks for `./bb-export.toml`, then `~/.config/bb-export/config.toml`. Pass `--config PATH` to use a specific file.
