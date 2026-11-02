@@ -215,5 +215,23 @@ class DeletedOptionTests(unittest.TestCase):
                 self.assertEqual(json.loads(output.read_text())['comments'], expected)
 
 
+class OutputErrorTests(unittest.TestCase):
+    @patch.dict('os.environ', {'BB_TOKEN': 'dummy'}, clear=True)
+    @patch('bb_pr_export.cli._load_config', return_value={})
+    @patch('bb_pr_export.cli.cloud.export_pull_request', return_value=EXPORT)
+    def test_filesystem_errors_are_reported(self, fetch, load):
+        for operation in ('mkdir', 'write_text'):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'out.md'
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch.object(Path, operation, side_effect=PermissionError(13, 'Permission denied')), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    code = main(['cloud', '--workspace', 'w', '--repo', 'r', '--pr', '1', '--output', str(path)])
+                self.assertEqual(code, 1)
+                self.assertIn(str(path), stderr.getvalue())
+                self.assertIn('Permission denied', stderr.getvalue())
+                self.assertNotIn('Traceback', stderr.getvalue())
+                self.assertEqual(stdout.getvalue(), '')
+
+
 if __name__ == "__main__":
     unittest.main()

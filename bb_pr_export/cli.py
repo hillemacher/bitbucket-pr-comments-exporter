@@ -51,9 +51,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         export = _fetch_export(args, token)
         output_path = _output_path(args)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         content = render_json(export, include_deleted=args.include_deleted) if args.format == "json" else render_markdown(export, include_deleted=args.include_deleted)
-        output_path.write_text(content, encoding="utf-8")
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            raise BitbucketExportError(f"Could not write output '{output_path}': {exc.strerror or str(exc)}") from exc
     except AuthError:
         print(
             "Authentication failed. Check that the token/app password is valid and has Pull Requests: Read scope.",
