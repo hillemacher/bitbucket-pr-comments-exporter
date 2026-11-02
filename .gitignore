@@ -12,6 +12,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+/.serena/
 
 # Packaging and build outputs
 build/

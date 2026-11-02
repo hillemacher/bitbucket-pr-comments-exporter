@@ -16,7 +16,6 @@ This repository contains a stdlib-only Python CLI for exporting Bitbucket pull r
 - `LICENSE`: MIT license for public publication.
 - `.github/workflows/test.yml`: GitHub Actions workflow running the `unittest` suite on Python 3.11 and 3.12.
 - `.gitignore`: excludes local config, secrets, Python caches, virtual environments, and build outputs.
-- `.serena/`: versioned Serena project settings and memories; `.serena/.gitignore` excludes local overrides and cache files.
 
 ## Build, Test, and Development Commands
 
