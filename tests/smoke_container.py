@@ -43,6 +43,8 @@ async def verify(url):
             'pr_url': 'http://bb-fixture:8010/bitbucket/projects/P/repos/r/pull-requests/42'})
         assert not result.is_error, result
         assert result.structured_content['comments'][0]['body'] == 'fixture comment'
+        numbered = await client.call_tool('export_pr_comments', {'pr_id': 42})
+        assert numbered.structured_content == result.structured_content
         rejected = await client.call_tool('export_pr_comments', {'pr_url': 'https://evil.example/projects/P/repos/r/pull-requests/42'})
         assert rejected.is_error
 
@@ -53,7 +55,7 @@ def main():
     network, fixture, service = prefix + '-net', prefix + '-fixture', prefix + '-mcp'
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
-        (path/'config.toml').write_text('[mcp]\nbase_url="http://bb-fixture:8010/bitbucket"\n')
+        (path/'config.toml').write_text('[mcp]\nbase_url="http://bb-fixture:8010/bitbucket"\n[server]\nproject="P"\nrepo="r"\n')
         (path/'bitbucket.pat').write_text('smoke-fixture\n')
         (path/'fixture.py').write_text(FIXTURE)
         for name in ('config.toml', 'bitbucket.pat'):
@@ -77,6 +79,7 @@ def main():
                     time.sleep(0.5)
             else:
                 raise RuntimeError(docker('logs',service))
+            print(docker('exec', service, 'python3', '/app/entrypoint.py', 'check', '42'))
             asyncio.run(verify(f'http://127.0.0.1:{port}/mcp'))
             print(docker('run','--rm',image,'probe-mcp',f'http://host.docker.internal:{port}/mcp'))
             print('Container smoke passed: host export and sandbox MCP connectivity.')

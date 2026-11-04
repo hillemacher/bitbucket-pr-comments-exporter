@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import socketserver
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -12,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FAKE = r'''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
+Path(os.environ['FAKE_LOG']).open('a').write(json.dumps(sys.argv[1:])+'\n')
 p=Path(os.environ['FAKE_STATE']); s=json.loads(p.read_text()); a=sys.argv[1:]
 def out(v): print(v)
 def save(): p.write_text(json.dumps(s))
@@ -28,7 +30,7 @@ elif a[0]=='inspect':
  elif '.Labels' in fmt:
   key=fmt.split('"')[1]; out(c.get('labels',{}).get(key,''))
 elif a[0]=='run':
- if 'image-fingerprint' in a: out('a'*64)
+ if 'image-fingerprint' in a: sys.stdin.read(); out('a'*64)
  # preflight and MCP probes succeed without networking
 elif a[0]=='create':
  if os.environ.get('FAIL_CREATE'): sys.exit(1)
@@ -56,16 +58,16 @@ class LauncherTests(unittest.TestCase):
             state=base/'state'; state.write_text('{}')
             harness=base/'launcher.sh'
             harness.write_text((ROOT/'container/bitbucket-pr-mcp.sh').read_text().replace('\nmain \"$@\"', '\nport_open() { container_running; }\nmain \"$@\"'))
-            for name, text in [('docker',FAKE), ('uname','#!/bin/sh\necho Darwin\n')]:
+            for name, text in [('docker',FAKE.replace('#!/usr/bin/env python3', '#!' + sys.executable)), ('uname','#!/bin/sh\necho Darwin\n')]:
                 path=base/name;path.write_text(text);path.chmod(0o755)
             class Handler(socketserver.BaseRequestHandler):
                 def handle(self): pass
             with socketserver.TCPServer(('127.0.0.1',0),Handler) as listener:
                 thread=threading.Thread(target=listener.serve_forever,daemon=True);thread.start()
                 env={**os.environ,'PATH':str(base)+os.pathsep+os.environ['PATH'],
-                     'FAKE_STATE':str(state),'BB_CONFIG_DIR':str(config),'BB_MCP_PORT':str(listener.server_address[1])}
+                     'FAKE_STATE':str(state),'FAKE_LOG':str(base/'calls'),'BB_CONFIG_DIR':str(config),'BB_MCP_PORT':str(listener.server_address[1])}
                 def run(*args, **extra):
-                    return subprocess.run(['bash',str(harness),*args],env={**env,**extra},capture_output=True,text=True,timeout=20)
+                    return subprocess.run(['/bin/bash',str(harness),*args],env={**env,**extra},capture_output=True,text=True,timeout=20)
                 try:
                     result=run('start','--autostart');self.assertEqual(result.returncode,0,result.stderr)
                     s=json.loads(state.read_text());name='bitbucket-pr-mcp'
@@ -80,6 +82,12 @@ class LauncherTests(unittest.TestCase):
                     (config/'.bitbucket-pr-mcp-previous-running').write_text('true\n')
                     result=run('start');self.assertEqual(result.returncode,0,result.stderr)
                     self.assertFalse((config/'.bitbucket-pr-mcp-previous-running').exists())
+                    result=run('setup');self.assertEqual(result.returncode,0,result.stderr)
+                    result=run('setup','--defaults','--tokens');self.assertEqual(result.returncode,0,result.stderr)
+                    result=run('check','42');self.assertEqual(result.returncode,0,result.stderr)
+                    calls=[json.loads(line) for line in (base/'calls').read_text().splitlines()]
+                    self.assertTrue(any(call[-2:]==['check','42'] for call in calls))
+                    self.assertTrue(any(call[-3:]==['setup','--defaults','--tokens'] for call in calls))
                     result=run('stop');self.assertEqual(result.returncode,0,result.stderr)
                     self.assertEqual(json.loads(state.read_text()),{})
                     # Refuse an unrelated container even when it has our expected name.

@@ -21,12 +21,12 @@ CONFIG_FILES=(config.toml bitbucket.pat)
 usage() {
   cat <<EOF
 Usage: bitbucket-pr-mcp.sh <command>
-  setup [--tokens]     Create private config/PAT; --tokens rotates the PAT
+  setup [--tokens] [--defaults]     Create config/PAT; --tokens rotates PAT, --defaults edits repository
   start [--autostart]  Build and start; optional unless-stopped restart policy
   stop                Remove the managed service and disable autostart
   status              Show status and restart policy
   logs [-f]           Show service logs
-  check <PR_URL>      Test a complete export, reporting counts only
+  check <PR_URL|PR_ID>      Test a complete export, reporting counts only
   doctor              Check Docker, permissions and MCP connectivity
 Environment: BB_MCP_PORT (default 9002), BB_CONFIG_DIR (default ~/.config/bitbucket-pr-mcp).
 EOF
@@ -186,10 +186,10 @@ run_tool() {
 }
 
 cmd_setup() {
-  local tokens=""
+  local setup_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --tokens) tokens="--tokens" ;;
+      --tokens|--defaults) setup_args+=("$1") ;;
       *) die "unknown setup option: $1" ;;
     esac
     shift
@@ -202,7 +202,7 @@ cmd_setup() {
   chmod 700 "$CONFIG_DIR"
   build_image
   local status=0
-  docker run "${docker_args[@]}" "$IMAGE" setup ${tokens:+"$tokens"} || status=$?
+  docker run "${docker_args[@]}" "$IMAGE" setup ${setup_args[@]+"${setup_args[@]}"} || status=$?
   protect_config
   if [[ $status -eq 0 ]]; then
     echo "Setup complete. Start the service with: $0 start"
@@ -365,7 +365,7 @@ cmd_check() {
   require_docker
   require_config
   ensure_image
-  [[ $# -eq 1 ]] || die "usage: $0 check <PR_URL>"
+  [[ $# -eq 1 ]] || die "usage: $0 check <PR_URL|PR_ID>"
   run_tool check "$1"
 }
 

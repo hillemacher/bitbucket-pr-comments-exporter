@@ -1,4 +1,5 @@
 # Example configuration for Bitbucket PR Comments Exporter.
+# MCP also reads project/repo below for PR-number input.
 # Copy this file to either:
 #   ./bb-export.toml
 #   ~/.config/bb-export/config.toml
@@ -28,6 +29,7 @@ username = "your.username"
 # Supply a scoped API token with read:pullrequest:bitbucket using --token or BB_TOKEN.
 # workspace = "your-workspace"
 # repo = "your-repo"
+# Complete workspace/repo defaults enable MCP pr_id input.
 
 [defaults]
 # Directory for generated files when --output is not provided. The exporter will
@@ -47,6 +49,8 @@ include_deleted = false
 # under ~/.config/bitbucket-pr-mcp/config.toml; its separate bitbucket.pat file
 # is loaded into BB_TOKEN by the entrypoint. Never put a token in this TOML.
 [mcp]
-# Exactly one allowed Bitbucket instance; include the Server context path.
+# Optional explicit instance boundary; include the Server context path.
+# Without this setting, MCP uses [server].server or Cloud repository defaults.
+# When both providers are populated, this setting selects the instance.
 # Cloud: "https://bitbucket.org"
 base_url = "https://bitbucket.CompanyX"

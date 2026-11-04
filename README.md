@@ -181,8 +181,8 @@ The exporter uses only the Python standard library so it is easy to audit, simpl
 
 The MCP service runs independently in Rancher Desktop on macOS (dockerd/moby).
 It exposes exactly one read-only tool,
-`export_pr_comments(pr_url)`, returning the existing `provider`, `pr`, `reviewers`,
-and `comments` JSON. All Python dependencies run inside the image; the Mac needs
+`export_pr_comments`, accepting either `pr_url` or `pr_id` and returning the
+existing `provider`, `pr`, `reviewers`, and `comments` JSON. All Python dependencies run inside the image; the Mac needs
 only Docker and its bundled Bash. Both Apple Silicon and Intel use native images.
 
 From a checkout inside your home folder:
@@ -195,9 +195,12 @@ From a checkout inside your home folder:
 ```
 
 Setup asks for a Bitbucket base URL (including any context path), optional Server
-username, and a hidden PAT. Use `https://bitbucket.org` for Cloud. A username
+username, optional repository defaults, and a hidden PAT. Use `https://bitbucket.org` for Cloud. A username
 selects the exporter's existing Basic authentication; omit it for Bearer/PAT.
-Setup preserves existing files; `setup --tokens` rotates the PAT. An exported
+Repeat setup preserves existing files; `setup --tokens` rotates the PAT. Use `setup --defaults` to set, change, or clear
+the default repository; both flags can be combined. Press Enter to retain existing
+repository fields, or answer no to clear repository defaults. TOML comments and
+unrelated settings are preserved. An exported
 `BB_TOKEN` can supply setup's token without typing it. Unset it afterward.
 
 Configuration lives in `~/.config/bitbucket-pr-mcp/`: `config.toml` contains
@@ -205,7 +208,7 @@ non-secret settings, while `bitbucket.pat` is a separate secret file. The folder
 has mode 700 and files have mode 600. Runtime mounts it read-only and reads the
 PAT into `BB_TOKEN` inside the process, rather than Docker's stored environment.
 Keep this folder outside repositories and synced folders. Setup validates local
-configuration; `check <PR_URL>` verifies actual API access and prints counts only.
+configuration; `check <PR_URL|PR_ID>` verifies actual API access and prints counts only.
 
 ```toml
 [mcp]
@@ -216,14 +219,59 @@ base_url = "https://host/bitbucket"
 include_deleted = false
 ```
 
-The URL determines the repository and PR; its instance must match `base_url`.
+A full URL determines the repository and PR; its instance must match the configured
+base. With complete repository defaults, the agent can instead call
+`export_pr_comments(pr_id=42)`. The tool description advertises the configured
+instance and default repository. Supplying both inputs, neither input, or an invalid
+ID produces an error before any API request. Partial defaults still permit URLs;
+PR-number calls identify which settings are missing.
+
+Server/Data Center can reuse an exporter configuration without an `[mcp]` table:
+
+```toml
+[server]
+server = "https://host/bitbucket"
+project = "P"
+repo = "R"
+# username = "optional.username"
+[defaults]
+include_deleted = false
+```
+
+For Cloud:
+
+```toml
+[cloud]
+workspace = "my-workspace"
+repo = "my-repository"
+[defaults]
+include_deleted = false
+```
+
+`[mcp].base_url` takes precedence; otherwise the server URL or Cloud defaults
+identify the instance. If both providers are populated, set `[mcp].base_url`
+explicitly. Server usernames resolve from `[server].username`, then
+`[defaults].username`, then the MCP process's `BB_USERNAME`. Host environment
+variables are not automatically forwarded to the container; use TOML for the
+container username. Output path and format settings remain CLI-specific.
+
+Existing installations can run `setup --defaults`, or copy a non-secret exporter
+TOML to the container's `config.toml` and keep the separate PAT file. The service
+continues to read that explicit file, rather than searching the agent's working
+directory. Stop/start the service and reconnect OpenCode after configuration
+changes. `preflight` and `doctor` report whether PR-number input is available.
+
+```bash
+./container/bitbucket-pr-mcp.sh setup --defaults
+./container/bitbucket-pr-mcp.sh check 42
+```
 Cloud uses the existing `api.bitbucket.org` client. PR paths with encoded segments,
 backslashes or dot segments are rejected. Output is returned in memory; CLI
 output-file/format defaults do not apply. Visible replies to omitted deleted
 parents retain their `parent_id`. Comments and descriptions are untrusted source
 data, and exports contain no diff or verified thread-resolution status.
 
-The image installs the optional SDK v2 extra (`pip install '.[mcp]'`). Ordinary
+The image installs the optional MCP extra (SDK v2 and TOML Kit for guided edits) (`pip install '.[mcp]'`). Ordinary
 CLI and bundled skill use still require only the standard library. The MCP
 container uses its own PAT directly, independently of the skill's egress mode.
 Ensure Rancher Desktop has VPN/network access and trusts your Bitbucket server's
