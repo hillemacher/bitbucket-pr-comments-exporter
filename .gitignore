@@ -28,3 +28,6 @@ env/
 .env
 .env.*
 bb-export.toml
+
+# Local reference guides
+/mcp-example-guides/

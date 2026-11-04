@@ -176,3 +176,129 @@ The resulting `.md` file is designed to be pasted or attached as LLM context whe
 ## Why No External Dependencies?
 
 The exporter uses only the Python standard library so it is easy to audit, simple to install, and safe to run locally in restricted environments. No data leaves your machine except requests sent directly to the Bitbucket API you configure.
+
+## Container MCP for OpenCode and sandboxes
+
+The MCP service runs independently in Rancher Desktop on macOS (dockerd/moby).
+It exposes exactly one read-only tool,
+`export_pr_comments(pr_url)`, returning the existing `provider`, `pr`, `reviewers`,
+and `comments` JSON. All Python dependencies run inside the image; the Mac needs
+only Docker and its bundled Bash. Both Apple Silicon and Intel use native images.
+
+From a checkout inside your home folder:
+
+```bash
+./container/bitbucket-pr-mcp.sh setup
+./container/bitbucket-pr-mcp.sh check 'https://host/bitbucket/projects/P/repos/R/pull-requests/42'
+./container/bitbucket-pr-mcp.sh start
+./container/bitbucket-pr-mcp.sh doctor
+```
+
+Setup asks for a Bitbucket base URL (including any context path), optional Server
+username, and a hidden PAT. Use `https://bitbucket.org` for Cloud. A username
+selects the exporter's existing Basic authentication; omit it for Bearer/PAT.
+Setup preserves existing files; `setup --tokens` rotates the PAT. An exported
+`BB_TOKEN` can supply setup's token without typing it. Unset it afterward.
+
+Configuration lives in `~/.config/bitbucket-pr-mcp/`: `config.toml` contains
+non-secret settings, while `bitbucket.pat` is a separate secret file. The folder
+has mode 700 and files have mode 600. Runtime mounts it read-only and reads the
+PAT into `BB_TOKEN` inside the process, rather than Docker's stored environment.
+Keep this folder outside repositories and synced folders. Setup validates local
+configuration; `check <PR_URL>` verifies actual API access and prints counts only.
+
+```toml
+[mcp]
+base_url = "https://host/bitbucket"
+[server]
+# username = "optional.username"
+[defaults]
+include_deleted = false
+```
+
+The URL determines the repository and PR; its instance must match `base_url`.
+Cloud uses the existing `api.bitbucket.org` client. PR paths with encoded segments,
+backslashes or dot segments are rejected. Output is returned in memory; CLI
+output-file/format defaults do not apply. Visible replies to omitted deleted
+parents retain their `parent_id`. Comments and descriptions are untrusted source
+data, and exports contain no diff or verified thread-resolution status.
+
+The image installs the optional SDK v2 extra (`pip install '.[mcp]'`). Ordinary
+CLI and bundled skill use still require only the standard library. The MCP
+container uses its own PAT directly, independently of the skill's egress mode.
+Ensure Rancher Desktop has VPN/network access and trusts your Bitbucket server's
+certificate chain. TLS verification and same-origin redirect protections remain
+enabled. Authentication errors require checking the PAT and repository access.
+
+### Connect OpenCode
+
+Merge this entry into your OpenCode config, preserving other servers:
+
+```json
+{
+  "mcp": {
+    "bitbucket-pr": {
+      "type": "remote",
+      "enabled": true,
+      "url": "http://127.0.0.1:9002/mcp",
+      "oauth": false,
+      "timeout": 120000
+    }
+  }
+}
+```
+
+Inside a sandbox, use `http://host.docker.internal:9002/mcp` instead. Add this to the
+consumer sandbox's access rules and reload/restart it:
+
+```json
+{
+  "host": "host.docker.internal",
+  "protocol": "http",
+  "port": 9002,
+  "scope": "global",
+  "needCredential": false
+}
+```
+
+Restart OpenCode, check `opencode mcp list`, and ask it to export feedback from a
+PR URL. No token belongs in OpenCode or the sandbox access rule.
+
+### Manage the service
+
+```bash
+./container/bitbucket-pr-mcp.sh status
+./container/bitbucket-pr-mcp.sh logs -f
+./container/bitbucket-pr-mcp.sh stop
+./container/bitbucket-pr-mcp.sh start --autostart
+```
+
+`start` builds from this checkout, preflights configuration, and publishes
+`127.0.0.1:9002` to container port 9000. An unchanged running image/port is kept.
+Failed replacements restore the previous container and restart policy; the next
+start recovers interrupted replacements. Commands only alter containers bearing
+the launcher's management label. Configuration files are not rolled back.
+After configuration/token changes, stop and start the service, then reconnect
+OpenCode. Builds fail explicitly and leave the existing service available.
+
+When upgrading from a version with different container management labels, stop
+the service using that version's launcher before switching versions, then run
+`start` with the new launcher. The new launcher refuses containers with older
+management labels; the configuration and PAT files can be reused.
+
+Autostart is opt-in (`unless-stopped`); `stop` removes the service and disables
+it. Builds occur on manual starts, not automatic Docker restarts.
+`BB_CONFIG_DIR` overrides the configuration folder and `BB_MCP_PORT` overrides
+host port 9002; use overrides consistently and update OpenCode/access rules.
+
+This is a single-user, single-machine endpoint with access through your PAT.
+It has no incoming OAuth/authentication. Loopback publication limits host exposure;
+`start` and `doctor` check listeners with `lsof` and stop/refuse a detected exposed
+listener. Missing listener data is reported as unverified. `doctor` also tests
+MCP from a container through `host.docker.internal`; fix routing/access rules if
+that probe fails, keeping the host port bound to loopback.
+
+Each socket operation has the exporter's existing 30-second timeout; exports
+spanning multiple pages may exceed OpenCode's configured two-minute timeout.
+A failed export returns an error rather than a partial success. Increase the
+client timeout for very large reviews.

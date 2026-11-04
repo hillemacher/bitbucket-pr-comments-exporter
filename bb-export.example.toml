@@ -42,3 +42,11 @@ format = "md"
 # Omit deleted comments in both formats by default. If true, Markdown shows
 # ~~[deleted]~~ and JSON retains deleted records and any provider-supplied body.
 include_deleted = false
+
+# Optional container MCP settings. The container's setup writes its own config
+# under ~/.config/bitbucket-pr-mcp/config.toml; its separate bitbucket.pat file
+# is loaded into BB_TOKEN by the entrypoint. Never put a token in this TOML.
+[mcp]
+# Exactly one allowed Bitbucket instance; include the Server context path.
+# Cloud: "https://bitbucket.org"
+base_url = "https://bitbucket.CompanyX"

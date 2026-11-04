@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+mcp = ["mcp>=2,<3"]
+
 [project.urls]
 Homepage = "https://github.com/hillemacher/bitbucket-pr-comments-exporter"
 Repository = "https://github.com/hillemacher/bitbucket-pr-comments-exporter"
@@ -33,6 +36,7 @@ Issues = "https://github.com/hillemacher/bitbucket-pr-comments-exporter/issues"
 
 [project.scripts]
 bb-export = "bb_pr_export.cli:main"
+bb-export-mcp = "bb_pr_export.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["bb_pr_export*"]
