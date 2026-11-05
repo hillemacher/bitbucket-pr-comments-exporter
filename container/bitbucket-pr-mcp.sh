@@ -290,7 +290,8 @@ cmd_start() {
     sleep 1
   done
   [[ -n "$ready" ]] || die "bitbucket-pr-mcp did not start listening within 30 s; see: $0 logs"
-  docker exec "$CONTAINER" python3 /app/entrypoint.py probe-mcp http://127.0.0.1:9000/mcp || die "MCP readiness check failed"
+  docker exec "$CONTAINER" python3 /app/entrypoint.py probe-mcp http://127.0.0.1:9000/mcp \
+    --probe-label "inside service container" || die "MCP readiness check failed"
   port_open "$HOST_PORT" || die "port $HOST_PORT is not reachable on 127.0.0.1; run: $0 doctor"
 
   local exposed
@@ -307,7 +308,8 @@ cmd_start() {
     rm -f "$JOURNAL"
     trap - EXIT INT TERM
   fi
-  docker run --rm "$IMAGE" probe-mcp "http://host.docker.internal:$HOST_PORT/mcp" ||
+  docker run --rm "$IMAGE" probe-mcp "http://host.docker.internal:$HOST_PORT/mcp" \
+    --probe-label "sandbox/container access" ||
     warn "the sandbox path check failed; run: $0 doctor"
   local autostart="off; enable with: $0 start --autostart"
   if [[ "$restart_policy" == "unless-stopped" ]]; then autostart="on"; fi
@@ -413,7 +415,8 @@ cmd_doctor() {
     else
       echo "[??] could not list listeners on port $HOST_PORT (no usable lsof data); binding unverified"
     fi
-    if docker run --rm "$IMAGE" probe-mcp "http://host.docker.internal:$HOST_PORT/mcp"; then
+    if docker run --rm "$IMAGE" probe-mcp "http://host.docker.internal:$HOST_PORT/mcp" \
+      --probe-label "sandbox/container access"; then
       ok "MCP reachable from a container via host.docker.internal:$HOST_PORT (sandbox path)"
     else
       bad "MCP not reachable via host.docker.internal:$HOST_PORT -> $0 logs"

@@ -106,13 +106,13 @@ def check(settings, reference: str):
     return result
 
 
-async def probe(url: str) -> None:
+async def probe(url: str, label: str = 'endpoint') -> None:
     from mcp import Client
     async with Client(url) as client:
         tools = await client.list_tools()
         if [tool.name for tool in tools.tools] != ['export_pr_comments']:
             raise BitbucketExportError('Unexpected MCP tool inventory.')
-    print('MCP ready: export_pr_comments')
+    print(f'MCP ready ({label}): {url} — export_pr_comments available')
 
 
 def main():
@@ -121,6 +121,7 @@ def main():
     parser.add_argument('reference', nargs='?')
     parser.add_argument('--tokens', action='store_true')
     parser.add_argument('--defaults', action='store_true', help='Configure or clear repository defaults')
+    parser.add_argument('--probe-label', default='endpoint', help='Connection path shown in MCP probe output')
     args = parser.parse_args()
     try:
         if args.command == 'setup':
@@ -132,7 +133,7 @@ def main():
         elif args.command == 'probe-mcp':
             if not args.reference:
                 parser.error('probe-mcp requires a URL')
-            asyncio.run(asyncio.wait_for(probe(args.reference), 10))
+            asyncio.run(asyncio.wait_for(probe(args.reference, args.probe_label), 10))
         else:
             settings = preflight()
             if args.command == 'serve':
