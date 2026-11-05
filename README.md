@@ -214,7 +214,13 @@ assignments, and decisions are independent. Markdown shows assignments before
 review outcomes, using “None reported” for an empty list and “Unknown” for `null`;
 it omits the assignment section for older exports without the field.
 
-From a checkout inside your home folder:
+Download `bitbucket-pr-mcp.zip` from a [GitHub release](https://github.com/hillemacher/bitbucket-pr-comments-exporter/releases),
+extract it inside your home folder, and open the extracted `bitbucket-pr-mcp/` folder.
+The ZIP contains a [short guide](docs/bitbucket-pr-mcp-howto_EN.md), a standalone launcher,
+and the license. No source checkout, host Python, GitHub account, or registry login is required.
+Each released launcher pins the public image to an exact multi-platform digest.
+
+From the extracted folder:
 
 ```bash
 ./container/bitbucket-pr-mcp.sh setup
@@ -290,7 +296,7 @@ container username. Output path and format settings remain CLI-specific.
 
 Existing installations can keep their config and separate PAT file unchanged.
 The service reads that explicit file rather than searching the agent's working
-directory. `setup --defaults` has been removed. After rebuilding with `start`,
+directory. `setup --defaults` has been removed. After pulling the image with `start`,
 reconnect OpenCode (or your MCP client) to refresh the required URL-only schema.
 `preflight` and `doctor` report the configured instance.
 
@@ -350,13 +356,13 @@ PR URL. No token belongs in OpenCode or the sandbox access rule.
 ./container/bitbucket-pr-mcp.sh start --autostart
 ```
 
-`start` builds from this checkout, preflights configuration, and publishes
+`setup` and `start` pull the configured image from GHCR. `start` preflights configuration and publishes
 `127.0.0.1:9002` to container port 9000. An unchanged running image/port is kept.
 Failed replacements restore the previous container and restart policy; the next
 start recovers interrupted replacements. Commands only alter containers bearing
 the launcher's management label. Configuration files are not rolled back.
 After configuration/token changes, stop and start the service, then reconnect
-OpenCode. Builds fail explicitly and leave the existing service available.
+OpenCode. Pull failures leave the existing service available.
 
 When upgrading from a version with different container management labels, stop
 the service using that version's launcher before switching versions, then run
@@ -364,9 +370,13 @@ the service using that version's launcher before switching versions, then run
 management labels; the configuration and PAT files can be reused.
 
 Autostart is opt-in (`unless-stopped`); `stop` removes the service and disables
-it. Builds occur on manual starts, not automatic Docker restarts.
+it. Pulls occur on manual starts, not automatic Docker restarts.
 `BB_CONFIG_DIR` overrides the configuration folder and `BB_MCP_PORT` overrides
 host port 9002; use overrides consistently and update OpenCode/access rules.
+`BB_MCP_IMAGE` explicitly overrides the image reference. To upgrade normally, download
+a newer release bundle and run its launcher with `start`, then reconnect OpenCode.
+The existing configuration and restart policy are retained. Use an earlier bundle
+to return to its pinned image; configuration files are not rolled back.
 
 This is a single-user, single-machine endpoint with access through your PAT.
 It has no incoming OAuth/authentication. Loopback publication limits host exposure;
@@ -379,3 +389,50 @@ Each socket operation has the exporter's existing 30-second timeout; exports
 spanning multiple pages may exceed OpenCode's configured two-minute timeout.
 A failed export returns an error rather than a partial success. Increase the
 client timeout for very large reviews.
+
+
+### Publish an MCP release
+
+The `Release MCP` workflow runs on stable `vX.Y.Z` tags matching the version in
+`pyproject.toml`. It runs the unit suite, builds and smoke-tests native Linux
+AMD64 and ARM64 images using fake Bitbucket responses, then publishes
+`ghcr.io/hillemacher/bitbucket-pr-mcp:X.Y.Z`. OCI labels record source, version,
+revision, and license. The two tested architecture images are combined into a
+multi-platform image. The workflow attaches a source-free launcher ZIP to the
+matching GitHub release, pinned to the combined image's digest.
+
+For the **first release**, change the GHCR package visibility to **public** in
+GitHub package settings after the image is pushed. Public repository visibility
+does not automatically make the package public. If anonymous verification fails,
+make the package public and rerun the failed publish job. The workflow verifies
+both platforms can be pulled with an empty Docker configuration before attaching
+the bundle to a GitHub release. Publishing uses the workflow's `GITHUB_TOKEN`
+with `packages: write`; users need no registry credentials.
+
+For a release, update the package version and the checkout launcher's default
+version tag together, push the changes, then push the matching `vX.Y.Z` tag.
+Release ZIPs embed a digest instead of the checkout's version tag. Never move a
+published release tag; issue a new version for fixes. Confirm `setup`, `start`,
+`check`, and `doctor` from an extracted bundle on macOS before announcing a release.
+
+To build the same bundle manually after publishing an image:
+
+```bash
+python3 tools/build_mcp_bundle.py --image 'ghcr.io/hillemacher/bitbucket-pr-mcp@sha256:REPLACE_WITH_PUBLISHED_DIGEST'
+```
+
+This writes `dist/bitbucket-pr-mcp.zip`; `--output PATH` chooses another destination.
+Only the guide, launcher, and license are included. Keep the extracted folder
+together when copying it into a harness repository. Generated bundles remain
+ignored by Git; `dist/example` is reference material only.
+
+For local image development, build directly from this checkout:
+
+```bash
+docker build -f container/Dockerfile -t bitbucket-pr-mcp:local .
+python3 tests/smoke_container.py bitbucket-pr-mcp:local
+```
+
+The smoke-test host needs the optional MCP extra. The macOS smoke check includes
+`host.docker.internal`; Linux CI checks host exports and container networking
+without assuming macOS host-loopback forwarding.

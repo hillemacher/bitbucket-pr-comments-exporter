@@ -18,7 +18,8 @@ p=Path(os.environ['FAKE_STATE']); s=json.loads(p.read_text()); a=sys.argv[1:]
 def out(v): print(v)
 def save(): p.write_text(json.dumps(s))
 if a[0]=='version': pass
-elif a[0]=='build': pass
+elif a[0]=='pull':
+ if os.environ.get('FAIL_PULL'): sys.exit(1)
 elif a[:2]==['image','inspect']:
  out('image-id' if '--format' in a else '[{}]')
 elif a[0]=='ps':
@@ -65,7 +66,8 @@ class LauncherTests(unittest.TestCase):
             with socketserver.TCPServer(('127.0.0.1',0),Handler) as listener:
                 thread=threading.Thread(target=listener.serve_forever,daemon=True);thread.start()
                 env={**os.environ,'PATH':str(base)+os.pathsep+os.environ['PATH'],
-                     'FAKE_STATE':str(state),'FAKE_LOG':str(base/'calls'),'BB_CONFIG_DIR':str(config),'BB_MCP_PORT':str(listener.server_address[1])}
+                     'FAKE_STATE':str(state),'FAKE_LOG':str(base/'calls'),'BB_CONFIG_DIR':str(config),'BB_MCP_PORT':str(listener.server_address[1]),
+                     'BB_MCP_IMAGE':'ghcr.io/hillemacher/bitbucket-pr-mcp@sha256:'+'b'*64}
                 def run(*args, **extra):
                     return subprocess.run(['/bin/bash',str(harness),*args],env={**env,**extra},capture_output=True,text=True,timeout=20)
                 try:
@@ -73,6 +75,13 @@ class LauncherTests(unittest.TestCase):
                     s=json.loads(state.read_text());name='bitbucket-pr-mcp'
                     self.assertEqual(s[name]['policy'],'unless-stopped')
                     self.assertTrue(s[name]['port'].startswith('127.0.0.1:'))
+                    before = state.read_text()
+                    result = run('start', FAIL_PULL='1')
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(state.read_text(), before)
+                    result = run('setup', FAIL_PULL='1')
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(state.read_text(), before)
                     s[name]['labels']['io.github.hillemacher.bitbucket-pr-mcp.fingerprint']='old';state.write_text(json.dumps(s))
                     result=run('start',FAIL_CREATE='1');self.assertNotEqual(result.returncode,0)
                     s=json.loads(state.read_text());self.assertTrue(s[name]['running'])
@@ -87,6 +96,12 @@ class LauncherTests(unittest.TestCase):
                     result=run('setup','--defaults');self.assertNotEqual(result.returncode,0)
                     result=run('check','https://bitbucket.org/w/r/pull-requests/42');self.assertEqual(result.returncode,0,result.stderr)
                     calls=[json.loads(line) for line in (base/'calls').read_text().splitlines()]
+                    self.assertTrue(any(call == ['pull', env['BB_MCP_IMAGE']] for call in calls))
+                    self.assertFalse(any(call[0] == 'build' for call in calls))
+                    fingerprints = [call for call in calls if 'image-fingerprint' in call]
+                    self.assertTrue(fingerprints)
+                    self.assertTrue(all('/app/entrypoint.py' in call and '-v' not in call for call in fingerprints))
+                    self.assertTrue(all(call[-2] == 'image-id' for call in calls if call[-1:] == ['serve']))
                     self.assertTrue(any(call[-2:]==['check','https://bitbucket.org/w/r/pull-requests/42'] for call in calls))
                     self.assertTrue(any(call[-2:]==['setup','--tokens'] for call in calls))
                     result=run('stop');self.assertEqual(result.returncode,0,result.stderr)

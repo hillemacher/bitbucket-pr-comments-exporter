@@ -3,10 +3,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_IMAGE="ghcr.io/hillemacher/bitbucket-pr-mcp:0.1.0"
 CONFIG_DIR="${BB_CONFIG_DIR:-$HOME/.config/bitbucket-pr-mcp}"
 HOST_PORT="${BB_MCP_PORT:-9002}"
-IMAGE="bitbucket-pr-mcp:local"
+IMAGE="${BB_MCP_IMAGE:-$DEFAULT_IMAGE}"
 CONTAINER="bitbucket-pr-mcp"
 NETWORK="bitbucket-pr-net"
 LABEL="io.github.hillemacher.bitbucket-pr-mcp=1"
@@ -22,13 +22,13 @@ usage() {
   cat <<EOF
 Usage: bitbucket-pr-mcp.sh <command>
   setup [--tokens]    Create config/PAT; --tokens rotates PAT
-  start [--autostart]  Build and start; optional unless-stopped restart policy
+  start [--autostart]  Pull and start; optional unless-stopped restart policy
   stop                Remove the managed service and disable autostart
   status              Show status and restart policy
   logs [-f]           Show service logs
   check <PR_URL>      Test a complete export, reporting counts only
   doctor              Check Docker, permissions and MCP connectivity
-Environment: BB_MCP_PORT (default 9002), BB_CONFIG_DIR (default ~/.config/bitbucket-pr-mcp).
+Environment: BB_MCP_IMAGE (default $DEFAULT_IMAGE), BB_MCP_PORT (default 9002), BB_CONFIG_DIR (default ~/.config/bitbucket-pr-mcp).
 EOF
 }
 
@@ -57,8 +57,7 @@ autostart_enabled() {
 
 image_fingerprint() {
   docker image inspect "$IMAGE" | docker run --rm -i --entrypoint python3 \
-    -v "$SCRIPT_DIR/entrypoint.py:/bitbucket-pr-fingerprint.py:ro" \
-    "$IMAGE" /bitbucket-pr-fingerprint.py image-fingerprint
+    "$IMAGE" /app/entrypoint.py image-fingerprint
 }
 
 assert_owned() {
@@ -172,13 +171,12 @@ require_config() {
   done
 }
 
-build_image() {
-  docker build -t "$IMAGE" -f "$SCRIPT_DIR/Dockerfile" "$SCRIPT_DIR/.." ||
-    die "could not build image; previous service kept"
+pull_image() {
+  docker pull "$IMAGE" || die "could not pull image $IMAGE; previous service kept"
 }
 
 ensure_image() {
-  docker image inspect "$IMAGE" >/dev/null 2>&1 || build_image
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || pull_image
 }
 
 run_tool() {
@@ -200,7 +198,10 @@ cmd_setup() {
   require_docker
   mkdir -p "$CONFIG_DIR"
   chmod 700 "$CONFIG_DIR"
-  build_image
+  pull_image
+  local candidate_image
+  candidate_image="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+  local IMAGE="$candidate_image"
   local status=0
   docker run "${docker_args[@]}" "$IMAGE" setup ${setup_args[@]+"${setup_args[@]}"} || status=$?
   protect_config
@@ -232,10 +233,11 @@ cmd_start() {
     if [[ "$restart_policy" == "no" ]]; then restart_policy="$saved_policy"; fi
     if container_running; then was_running=1; fi
   fi
-  build_image
+  pull_image
   # Freeze the candidate reference so a later retag cannot change the validated image.
-  local IMAGE
-  IMAGE="$(docker image inspect --format '{{.Id}}' bitbucket-pr-mcp:local)"
+  local candidate_image
+  candidate_image="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+  local IMAGE="$candidate_image"
   fingerprint="$(image_fingerprint)" || die "could not fingerprint the candidate image; previous container kept"
   [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]] || die "invalid image fingerprint; previous container kept"
   run_tool preflight || die "preflight failed; previous container/policy kept (see $0 setup)"
@@ -255,7 +257,7 @@ cmd_start() {
 
   docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NETWORK" >/dev/null
   if [[ -n "$existed" ]]; then
-    # A restart loop can recover while the build runs; preserve the state at the handover.
+    # A restart loop can recover while the pull runs; preserve the state at the handover.
     if container_running; then was_running=1; else was_running=""; fi
     PREVIOUS_RUNNING="$was_running"
     if [[ -n "$was_running" ]]; then write_recovery_state true; else write_recovery_state false; fi
@@ -398,9 +400,9 @@ cmd_doctor() {
   done
 
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    ok "image $IMAGE built"
+    ok "image $IMAGE available"
   else
-    bad "image $IMAGE missing -> $0 start (builds it)"
+    bad "image $IMAGE missing -> $0 start (pulls it)"
   fi
 
   if container_running; then

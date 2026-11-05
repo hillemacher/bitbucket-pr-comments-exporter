@@ -6,6 +6,7 @@ Bitbucket requests. Requires the optional MCP extra on the test host.
 import asyncio
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import sys
@@ -83,8 +84,14 @@ def main():
                 raise RuntimeError(docker('logs',service))
             print(docker('exec', service, 'python3', '/app/entrypoint.py', 'check', 'http://bb-fixture:8010/bitbucket/projects/P/repos/r/pull-requests/42'))
             asyncio.run(verify(f'http://127.0.0.1:{port}/mcp'))
-            print(docker('run','--rm',image,'probe-mcp',f'http://host.docker.internal:{port}/mcp'))
-            print('Container smoke passed: host export and sandbox MCP connectivity.')
+            if platform.system() == 'Darwin':
+                print(docker('run','--rm',image,'probe-mcp',f'http://host.docker.internal:{port}/mcp'))
+            else:
+                # Linux CI verifies container access over the fixture network.
+                # Host-loopback forwarding through host.docker.internal is macOS-specific.
+                print(docker('run', '--rm', '--network', f'container:{service}', image,
+                             'probe-mcp', 'http://127.0.0.1:9000/mcp'))
+            print('Container smoke passed: host exports and container MCP connectivity.')
         finally:
             for name in (service, fixture):
                 subprocess.run(['docker','rm','-f',name],capture_output=True)
