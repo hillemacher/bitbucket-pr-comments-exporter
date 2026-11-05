@@ -13,6 +13,24 @@ ask for a supported URL:
 
 ## Retrieve the feedback
 
+Prefer a connected `export_pr_comments` MCP tool when its advertised Bitbucket
+instance matches the URL's scheme, host, port, and Server/Data Center context
+path (Cloud uses `https://bitbucket.org`). Pass the full URL as `pr_url` and read
+the returned JSON. The service handles authentication and configuration; local
+Python, tokens, and TOML files are not prerequisites for this path.
+Deleted-comment inclusion follows the service's configuration.
+
+If no matching MCP connection is available, use the bundled script below.
+After an MCP error, report the error and relevant service setup guidance; do not
+automatically retry through the script or switch authentication methods. This
+skill does not set up or reconfigure the service.
+
+For either path, read all discussions, in chunks if needed. Disclose incomplete
+retrieval or reading rather than presenting a partial brief as complete. Analyze
+only a successful export, using the interpretation rules below.
+
+### Bundled script
+
 The installed skill includes the exporter; no CLI installation is needed.
 Locate this skill's directory and run its script by absolute path, keeping the
 user's current working directory so local config discovery still works:
@@ -23,12 +41,11 @@ python3 <skill-root>/scripts/export_pr.py <PR_URL> --output <unique-temporary-di
 
 Pass the URL as a single, safely quoted argument. Use a fresh temporary directory
 for each export to avoid overwriting files or reading stale results. Read the
-JSON only after the command succeeds. Read all discussions, in chunks if needed;
-disclose incomplete retrieval or reading rather than presenting a partial brief
-as complete. Remove temporary output when finished unless the user wants it saved.
+JSON only after the command succeeds. Remove temporary output when finished
+unless the user wants it saved.
 
-Prerequisites are Python 3.11+ and sandbox networking with egress credential
-injection already configured, including proxy routing and certificate trust.
+Script prerequisites are Python 3.11+ and sandbox networking with egress
+credential injection already configured, including proxy routing and certificate trust.
 The default authentication mode is `egress`: Python sends no Authorization
 header and ignores local credentials, including `BB_TOKEN` and `BB_USERNAME`.
 The egress server injects authentication. Allowed destinations and GET-only
@@ -39,14 +56,14 @@ For explicitly requested local use outside this sandbox, append
 `--auth-mode token`. That mode requires `BB_TOKEN` and optionally `BB_USERNAME`
 for Server/Data Center. Never switch to token mode automatically after a failure.
 
-Existing non-secret defaults are
+Local TOML configuration is optional. Existing non-secret defaults are
 read from `./bb-export.toml`, then `~/.config/bb-export/config.toml` (the first
 existing file wins). The URL supplies the PR identity; output is always JSON at
 the explicit destination. Deleted-comment inclusion follows existing config
 and defaults to false.
 
-If Python or configuration is missing, explain the setup needed. In egress
-mode, authentication or access failures require checking egress access rules and
+If Python or required networking setup is missing, explain the setup needed.
+In egress mode, authentication or access failures require checking egress access rules and
 credential injection; do not ask for a local token. In explicit token mode, ask
 the user to configure missing credentials locally, never paste them in chat.
 Do not print environment variables or place credentials in commands or config.
@@ -71,6 +88,8 @@ infer assignment or a pending decision from comment activity or silence.
 
 Produce a concise brief with:
 
+- Assigned reviewers, separately from recorded decisions: use "None reported"
+  for `[]` and "Unknown" for `null` or a missing field.
 - Reviewer decisions exactly as reported, without inferring approval from silence.
 - Main discussion threads, incorporating replies and distinguishing requests,
   suggestions, questions, and agreements.

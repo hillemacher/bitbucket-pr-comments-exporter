@@ -46,8 +46,15 @@ Use `--output FILE` to choose the destination and `--format json` to write norma
 The self-contained **bitbucket-pr-feedback** skill lets a local coding agent
 retrieve feedback from one PR URL and summarize reviewer decisions, discussion
 threads, candidate action items, and open questions. It supports Bitbucket Cloud
-and Server/Data Center. Users need Python 3.11+; installing `bb-export` separately
-is unnecessary.
+and Server/Data Center. The skill prefers a connected `export_pr_comments` MCP
+tool whose advertised instance matches the PR URL, passing the full URL as
+`pr_url`. Otherwise, it uses the bundled script. After an MCP failure, it reports
+the error without automatically switching to the script or other authentication.
+The skill does not set up or reconfigure the service.
+
+The MCP path uses the service's authentication and configuration and needs no
+local Python or credentials. The script path requires Python 3.11+; installing
+`bb-export` separately is unnecessary.
 
 Build the installable ZIP from a checkout:
 
@@ -73,8 +80,8 @@ bundled Python modules under `scripts/bb_pr_export`. Other agents can use the
 same extracted folder in their supported skill location. When updating, replace
 the previous skill folder with the newly built bundle.
 
-The skill defaults to `--auth-mode egress`, for sandboxes whose egress server
-injects credentials. Python sends no Authorization header and ignores local
+The bundled script defaults to `--auth-mode egress`, for sandboxes whose egress
+server injects credentials. Python sends no Authorization header and ignores local
 credential inputs, including `BB_TOKEN` and `BB_USERNAME`. Routing, proxy settings,
 and certificate trust must already be configured. The egress policy must enforce
 allowed destinations and HTTP methods (GET-only for this exporter); the skill
@@ -91,7 +98,8 @@ Use $bitbucket-pr-feedback to summarize the feedback on https://bitbucket.org/WO
 What follow-up actions do reviewers suggest on https://host/projects/PROJECT/repos/REPO/pull-requests/42/overview?
 ```
 
-The agent runs the bundled entry point with a unique temporary output path:
+When using the script path, the agent runs the bundled entry point with a unique
+temporary output path:
 
 ```bash
 python3 /absolute/path/to/bitbucket-pr-feedback/scripts/export_pr.py \
@@ -100,11 +108,17 @@ python3 /absolute/path/to/bitbucket-pr-feedback/scripts/export_pr.py \
 ```
 
 Only one HTTP(S) PR URL is accepted, with a numeric PR ID. Bare PR numbers and
-embedded credentials are rejected. Existing config discovery uses the caller's
-working directory; URL values supply the PR identity, JSON output is forced,
-and deleted-comment inclusion follows config (false by default).
+embedded credentials are rejected. For the script, local TOML configuration is
+optional. Existing config discovery uses the caller's working directory; URL
+values supply the PR identity, JSON output is forced, and deleted-comment
+inclusion follows config (false by default). The MCP path uses the service's
+deleted-comment setting.
 
-The brief references comment IDs and file locations. It interprets replies but
+Both paths use the same interpretation rules: read all discussions, disclose
+incomplete retrieval or reading, and analyze only successful exports. The brief
+lists assigned reviewers separately from recorded decisions, treating empty
+assignments as none reported and null or missing assignments as unknown. It
+references comment IDs and file locations. It interprets replies but
 cannot verify that feedback has been addressed: exports contain neither code
 diffs nor normalized thread-resolution status. The skill retrieves and explains
 feedback; it does not modify code or write to Bitbucket.
