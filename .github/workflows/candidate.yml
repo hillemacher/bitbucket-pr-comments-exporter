@@ -118,6 +118,9 @@ jobs:
           anonymous_config=$(mktemp -d)
           trap 'rm -rf "$anonymous_config"' EXIT
           docker --config "$anonymous_config" pull --platform linux/amd64 "$IMAGE_REF"
+          # Classic Docker stores one platform per digest reference. Remove only
+          # this job's first pull before verifying the other platform.
+          docker --config "$anonymous_config" image rm "$IMAGE_REF"
           docker --config "$anonymous_config" pull --platform linux/arm64 "$IMAGE_REF"
       - name: Build candidate bundle and record provenance
         env:
