@@ -194,14 +194,28 @@ From a checkout inside your home folder:
 ./container/bitbucket-pr-mcp.sh doctor
 ```
 
-Setup asks for a Bitbucket base URL (including any context path), optional Server
-username, optional repository defaults, and a hidden PAT. Use `https://bitbucket.org` for Cloud. A username
-selects the exporter's existing Basic authentication; omit it for Bearer/PAT.
+Setup provides brief guidance and examples for the Bitbucket base URL, optional
+Server username, optional repository defaults, and token. For Server/Data Center,
+use a base URL such as `https://bitbucket.example.com/bitbucket`, including any
+context path; for Cloud, use `https://bitbucket.org`. A Server username such as
+`jane.doe` selects the exporter's existing Basic authentication; omit it for Bearer/PAT.
+Cloud does not use this username.
+
+Repository defaults use identifiers from a PR URL, rather than display names:
+
+- Server/Data Center: `https://bitbucket.example.com/bitbucket/projects/PROJ/repos/my-repository/pull-requests/42`
+  has project key `PROJ` and repository slug `my-repository`.
+- Cloud: `https://bitbucket.org/my-workspace/my-repository/pull-requests/42`
+  has workspace slug `my-workspace` and repository slug `my-repository`.
+
+Complete defaults enable PR-number input such as `42`; full PR URLs work without defaults.
 Repeat setup preserves existing files; `setup --tokens` rotates the PAT. Use `setup --defaults` to set, change, or clear
 the default repository; both flags can be combined. Press Enter to retain existing
 repository fields, or answer no to clear repository defaults. TOML comments and
 unrelated settings are preserved. An exported
-`BB_TOKEN` can supply setup's token without typing it. Unset it afterward.
+`BB_TOKEN` can supply setup's token without typing it. Setup acknowledges this
+without displaying the value; otherwise, token input is hidden. The token is saved
+separately from configuration. Unset `BB_TOKEN` afterward.
 
 Configuration lives in `~/.config/bitbucket-pr-mcp/`: `config.toml` contains
 non-secret settings, while `bitbucket.pat` is a separate secret file. The folder

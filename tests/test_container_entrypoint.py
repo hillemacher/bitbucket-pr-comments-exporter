@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import os
 from pathlib import Path
 import tempfile
@@ -14,6 +15,60 @@ spec.loader.exec_module(entry)
 
 @unittest.skipUnless(importlib.util.find_spec('tomlkit'), 'Install the optional MCP extra')
 class ContainerEntrypointTests(unittest.TestCase):
+    def test_initial_setup_guidance_keeps_examples_out_of_config(self):
+        for base, identifier, example in (
+            ('https://bb.internal/bitbucket', 'project', 'Project key: PROJ'),
+            ('https://bitbucket.org', 'workspace', 'Workspace slug: my-workspace'),
+        ):
+            with self.subTest(base=base), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(entry, 'CONFIG', Path(directory)), \
+                    patch.dict(os.environ, {'BB_TOKEN': 'secret-fixture'}, clear=True), \
+                    patch('builtins.input', side_effect=[base, '', 'y', '', '']) as prompts, \
+                    patch.object(entry.getpass, 'getpass') as hidden_input, \
+                    patch('sys.stdout', new_callable=io.StringIO) as output:
+                entry.setup(False)
+                settings = entry.load_settings(str(Path(directory) / 'config.toml'))
+                self.assertEqual(settings.base_url, base)
+                self.assertIsNone(getattr(settings, identifier))
+                self.assertIsNone(settings.repo)
+                self.assertIsNone(settings.username)
+                text = output.getvalue()
+                for guidance in ('https://bitbucket.example.com/bitbucket', 'https://bitbucket.org',
+                                 'context path', 'jane.doe', 'Basic authentication', 'Bearer/PAT',
+                                 'Full PR URLs work without defaults', example,
+                                 'repository slug: my-repository', 'Press Enter to retain',
+                                 'separately from config.toml', 'Using the token supplied by BB_TOKEN'):
+                    self.assertIn(guidance, text)
+                self.assertNotIn('secret-fixture', text)
+                hidden_input.assert_not_called()
+                self.assertEqual(prompts.call_count, 5)
+                self.assertEqual(prompts.call_args_list[-1].args[0], 'Default repo []: ')
+
+    def test_token_rotation_guidance_and_repeat_setup(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(entry, 'CONFIG', Path(directory)), \
+                patch.dict(os.environ, {}, clear=True), \
+                patch('sys.stdout', new_callable=io.StringIO) as output:
+            (Path(directory) / 'config.toml').write_text('[server]\nserver="https://bb.internal"\n')
+            (Path(directory) / 'bitbucket.pat').write_text('old-secret')
+            with patch('builtins.input') as prompts, \
+                    patch.object(entry.getpass, 'getpass', return_value='rotated-secret') as hidden_input:
+                entry.setup(True)
+                hidden_input.assert_called_once_with('Bitbucket PAT (hidden): ')
+                prompts.assert_not_called()
+            text = output.getvalue()
+            self.assertIn('input is hidden', text)
+            self.assertIn('separately from config.toml', text)
+            self.assertNotIn('Base URL examples', text)
+            self.assertNotIn('repository defaults let you', text)
+            self.assertNotIn('Using the token supplied by BB_TOKEN', text)
+            self.assertNotIn('rotated-secret', text)
+            self.assertNotIn('old-secret', text)
+            output.seek(0)
+            output.truncate(0)
+            entry.setup(False)
+            self.assertNotIn('The token is saved', output.getvalue())
+            self.assertNotIn('rotated-secret', output.getvalue())
+
     def test_setup_preserves_configuration_and_rotates_token_atomically(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(entry, 'CONFIG', Path(directory)), \
                 patch.dict(os.environ, {'BB_TOKEN': 'fixture-first'}), patch('builtins.input', side_effect=['https://bitbucket.org', '', '']):
@@ -40,8 +95,15 @@ class ContainerEntrypointTests(unittest.TestCase):
             path.write_text(original)
             token = Path(directory) / 'bitbucket.pat'
             token.write_text('fixture')
-            with patch('builtins.input', side_effect=['y', 'P', 'repo']):
+            with patch('builtins.input', side_effect=['y', 'P', 'repo']), \
+                    patch('sys.stdout', new_callable=io.StringIO) as output:
                 entry.setup(False, True)
+            self.assertIn('Project key: PROJ; repository slug: my-repository', output.getvalue())
+            self.assertNotIn('Base URL examples', output.getvalue())
+            with patch('builtins.input', side_effect=['', '', '']) as prompts:
+                entry.setup(False, True)
+            self.assertEqual(prompts.call_args_list[1].args[0], 'Default project [P]: ')
+            self.assertEqual(prompts.call_args_list[2].args[0], 'Default repo [repo]: ')
             settings = entry.preflight()
             self.assertEqual((settings.project, settings.repo), ('P', 'repo'))
             self.assertIn('# personal settings', path.read_text())

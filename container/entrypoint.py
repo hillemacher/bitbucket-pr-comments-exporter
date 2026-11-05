@@ -45,7 +45,11 @@ def setup(renew: bool, update_defaults: bool = False) -> None:
     creating = not path.exists()
     doc = document() if creating else parse(path.read_text(encoding='utf-8'))
     if creating:
+        print('Base URL examples: https://bitbucket.example.com/bitbucket (Server/Data Center) '
+              'or https://bitbucket.org (Cloud). Include any context path, such as /bitbucket.')
         base = canonical_base(input('Bitbucket base URL (include context path): ').strip())
+        print('For Server/Data Center, a username (for example, jane.doe) selects Basic authentication; '
+              'leave it blank for Bearer/PAT. Cloud does not use this username.')
         username = input('Optional Server username (Enter for Bearer/PAT): ').strip()
         doc['mcp'] = {'base_url': base}
         doc['defaults'] = {'include_deleted': False}
@@ -61,11 +65,21 @@ def setup(renew: bool, update_defaults: bool = False) -> None:
         keys = ('workspace', 'repo') if provider == 'cloud' else ('project', 'repo')
         current = doc.get(provider, {})
         enabled = any(current.get(key) for key in keys)
+        print('Complete repository defaults let you use a PR number (for example, 42). '
+              'Full PR URLs work without defaults.')
         answer = input('Configure default repository? [' + ('Y/n' if enabled else 'y/N') + ']: ').strip().lower()
         if answer not in ('', 'y', 'yes', 'n', 'no'):
             raise BitbucketExportError('Answer yes or no; configuration was not changed.')
         configure = answer in ('y', 'yes') or (not answer and enabled)
         if configure:
+            if provider == 'cloud':
+                print('Example PR URL: https://bitbucket.org/my-workspace/my-repository/pull-requests/42\n'
+                      'Workspace slug: my-workspace; repository slug: my-repository.')
+            else:
+                print('Example PR URL: https://bitbucket.example.com/bitbucket/projects/PROJ/repos/my-repository/pull-requests/42\n'
+                      'Project key: PROJ; repository slug: my-repository.')
+            print('Enter identifiers, not display names or full URLs. '
+                  'Press Enter to retain the value in brackets; an empty bracket means no value.')
             if provider not in doc:
                 doc[provider] = table()
             for key in keys:
@@ -88,6 +102,11 @@ def setup(renew: bool, update_defaults: bool = False) -> None:
     if creating or update_defaults:
         write_private(path, dumps(doc))
     if renew or not (CONFIG / 'bitbucket.pat').exists():
+        print('The token is saved in bitbucket.pat, separately from config.toml.')
+        if os.environ.get('BB_TOKEN'):
+            print('Using the token supplied by BB_TOKEN.')
+        else:
+            print('Enter your Bitbucket token below; input is hidden.')
         token = os.environ.get('BB_TOKEN') or getpass.getpass('Bitbucket PAT (hidden): ')
         token = token.strip()
         if not token or any(c.isspace() for c in token):
