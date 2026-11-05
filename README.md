@@ -421,14 +421,14 @@ python3 tests/smoke_container.py bitbucket-pr-mcp:preview-amd64
 These commands build and test locally; they do not push images or start a release.
 The revision suffix identifies a working-tree preview rather than a tagged build.
 
-### Publish a candidate from the feature branch
+### Publish a candidate image
 
 The `Candidate MCP` workflow publishes Docker images only for explicit
-`mcp-candidate-*` tags. Pushing the feature branch runs normal tests without
+`mcp-candidate-*` tags. Pushing a branch runs normal tests without
 publishing images. Candidate rollout is separate from the stable `v*` workflow.
 
-After authorizing the rollout, push `codex/publish-mcp-image` and wait for its
-Tests workflow to pass. Then create a new tag at that tested commit, for example
+Push the commit you want to test and wait for its Tests workflow to pass.
+Then create a new tag at that tested commit, for example
 `mcp-candidate-001`, and push that tag explicitly. Do not reuse an existing tag
 or use `git push --tags`.
 
