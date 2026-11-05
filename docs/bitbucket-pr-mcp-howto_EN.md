@@ -8,10 +8,17 @@ launcher; no source checkout, host Python, GitHub account, or registry login is 
 
 Download `bitbucket-pr-mcp.zip` from the desired
 [GitHub release](https://github.com/hillemacher/bitbucket-pr-comments-exporter/releases).
+For candidate testing, download the artifact from the successful **Candidate MCP**
+workflow run instead (requires GitHub sign-in), extract that artifact, and use
+the inner `bitbucket-pr-mcp-candidate.zip`. Its launcher pins the published
+candidate image by digest; image downloads require no GitHub login. Candidate
+metadata is in the artifact's `candidate.json` file.
+
 Extract it inside your home folder, which Rancher Desktop shares with containers:
 
 ```bash
 unzip bitbucket-pr-mcp.zip
+# For a candidate, use: unzip bitbucket-pr-mcp-candidate.zip
 cd bitbucket-pr-mcp/container
 chmod +x bitbucket-pr-mcp.sh
 ```

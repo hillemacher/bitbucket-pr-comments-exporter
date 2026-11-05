@@ -421,6 +421,45 @@ python3 tests/smoke_container.py bitbucket-pr-mcp:preview-amd64
 These commands build and test locally; they do not push images or start a release.
 The revision suffix identifies a working-tree preview rather than a tagged build.
 
+### Publish a candidate from the feature branch
+
+The `Candidate MCP` workflow publishes Docker images only for explicit
+`mcp-candidate-*` tags. Pushing the feature branch runs normal tests without
+publishing images. Candidate rollout is separate from the stable `v*` workflow.
+
+After authorizing the rollout, push `codex/publish-mcp-image` and wait for its
+Tests workflow to pass. Then create a new tag at that tested commit, for example
+`mcp-candidate-001`, and push that tag explicitly. Do not reuse an existing tag
+or use `git push --tags`.
+
+The workflow runs the unit suite, builds native AMD64 and ARM64 images, and
+smoke-tests each before upload. It publishes
+`ghcr.io/hillemacher/bitbucket-pr-mcp:candidate-<full-commit-sha>` plus architecture
+tags, without changing the package version or publishing a GitHub release.
+The job summary records the exact source commit, package version, and combined
+image digest. Candidate builds for the same commit run sequentially. Reruns may
+rebuild that commit's candidate tag; use the recorded digest for exact pinning.
+
+Both architectures must download anonymously by digest before the workflow
+uploads its bundle artifact. If this check fails because the recreated GHCR
+package is private, make it public in package settings and rerun the failed
+publish job. Other registry failures require fixing connectivity or permissions.
+
+Download `bitbucket-pr-mcp-candidate-<full-commit-sha>` from the successful
+workflow run's **Artifacts** section (GitHub sign-in is required for Actions
+artifact downloads). It contains `bitbucket-pr-mcp-candidate.zip` and
+`candidate.json`; the artifact is retained for 30 days. The inner ZIP contains
+only the guide, executable launcher, and license, pinned to the published image
+digest. Docker image pulls themselves require no GitHub account.
+
+Extract the inner ZIP and follow its guide on macOS: run `setup`, `start`,
+`doctor`, and `check` with a full PR URL. Confirm assigned reviewers and comments,
+then copy the guide and launcher into the harness and verify sandbox access.
+Use fake credentials only for fixture smoke tests; keep real tokens in the
+existing protected configuration folder. For fixes, commit the change and tag
+the new tested commit as a new candidate. Stable release planning follows
+acceptance; the existing draft release is not used for this rollout.
+
 ### Publish an MCP release
 
 The `Release MCP` workflow runs on stable `vX.Y.Z` tags matching the version in
