@@ -391,6 +391,36 @@ A failed export returns an error rather than a partial success. Increase the
 client timeout for very large reviews.
 
 
+### Prepare a local MCP preview
+
+Build a source-free review ZIP without publishing an image:
+
+```bash
+python3 tools/build_mcp_bundle.py --preview
+```
+
+This writes `dist/bitbucket-pr-mcp-preview.zip`; `--output PATH` overrides the
+destination. It contains only the executable standalone launcher, guide, and
+license. The launcher uses the planned GHCR version tag from `pyproject.toml`.
+The guide labels the bundle as unpublished: setup/start cannot pull that image
+until it is published. Review the extracted launcher with `--help`; test local
+images with the fixture smoke test below. Regenerate the final release ZIP with
+`--image` and the published multi-platform digest. The two modes are mutually
+exclusive; release bundles continue to require an exact digest.
+
+To build and test local images for both architectures, including emulation when
+needed, run from the checkout (the host needs the optional MCP extra):
+
+```bash
+docker build --platform linux/arm64 --build-arg VERSION=0.1.0 --build-arg REVISION="$(git rev-parse HEAD)-dirty" -f container/Dockerfile -t bitbucket-pr-mcp:preview-arm64 .
+docker build --platform linux/amd64 --build-arg VERSION=0.1.0 --build-arg REVISION="$(git rev-parse HEAD)-dirty" -f container/Dockerfile -t bitbucket-pr-mcp:preview-amd64 .
+python3 tests/smoke_container.py bitbucket-pr-mcp:preview-arm64
+python3 tests/smoke_container.py bitbucket-pr-mcp:preview-amd64
+```
+
+These commands build and test locally; they do not push images or start a release.
+The revision suffix identifies a working-tree preview rather than a tagged build.
+
 ### Publish an MCP release
 
 The `Release MCP` workflow runs on stable `vX.Y.Z` tags matching the version in
