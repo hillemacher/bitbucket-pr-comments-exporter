@@ -43,8 +43,10 @@ async def verify(url):
             'pr_url': 'http://bb-fixture:8010/bitbucket/projects/P/repos/r/pull-requests/42'})
         assert not result.is_error, result
         assert result.structured_content['comments'][0]['body'] == 'fixture comment'
+        assert tools[0].input_schema['required'] == ['pr_url']
+        assert set(tools[0].input_schema['properties']) == {'pr_url'}
         numbered = await client.call_tool('export_pr_comments', {'pr_id': 42})
-        assert numbered.structured_content == result.structured_content
+        assert numbered.is_error
         rejected = await client.call_tool('export_pr_comments', {'pr_url': 'https://evil.example/projects/P/repos/r/pull-requests/42'})
         assert rejected.is_error
 
@@ -79,7 +81,7 @@ def main():
                     time.sleep(0.5)
             else:
                 raise RuntimeError(docker('logs',service))
-            print(docker('exec', service, 'python3', '/app/entrypoint.py', 'check', '42'))
+            print(docker('exec', service, 'python3', '/app/entrypoint.py', 'check', 'http://bb-fixture:8010/bitbucket/projects/P/repos/r/pull-requests/42'))
             asyncio.run(verify(f'http://127.0.0.1:{port}/mcp'))
             print(docker('run','--rm',image,'probe-mcp',f'http://host.docker.internal:{port}/mcp'))
             print('Container smoke passed: host export and sandbox MCP connectivity.')

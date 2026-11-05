@@ -83,11 +83,12 @@ class LauncherTests(unittest.TestCase):
                     result=run('start');self.assertEqual(result.returncode,0,result.stderr)
                     self.assertFalse((config/'.bitbucket-pr-mcp-previous-running').exists())
                     result=run('setup');self.assertEqual(result.returncode,0,result.stderr)
-                    result=run('setup','--defaults','--tokens');self.assertEqual(result.returncode,0,result.stderr)
-                    result=run('check','42');self.assertEqual(result.returncode,0,result.stderr)
+                    result=run('setup','--tokens');self.assertEqual(result.returncode,0,result.stderr)
+                    result=run('setup','--defaults');self.assertNotEqual(result.returncode,0)
+                    result=run('check','https://bitbucket.org/w/r/pull-requests/42');self.assertEqual(result.returncode,0,result.stderr)
                     calls=[json.loads(line) for line in (base/'calls').read_text().splitlines()]
-                    self.assertTrue(any(call[-2:]==['check','42'] for call in calls))
-                    self.assertTrue(any(call[-3:]==['setup','--defaults','--tokens'] for call in calls))
+                    self.assertTrue(any(call[-2:]==['check','https://bitbucket.org/w/r/pull-requests/42'] for call in calls))
+                    self.assertTrue(any(call[-2:]==['setup','--tokens'] for call in calls))
                     result=run('stop');self.assertEqual(result.returncode,0,result.stderr)
                     self.assertEqual(json.loads(state.read_text()),{})
                     # Refuse an unrelated container even when it has our expected name.

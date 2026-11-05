@@ -30,6 +30,7 @@ def export_pull_request(
     return {
         "provider": "server",
         "pr": _normalize_pr(pr),
+        "assigned_reviewers": _normalize_assigned_reviewers(pr),
         "reviewers": _normalize_reviewers(pr),
         "comments": _normalize_comments_from_activities(activities),
     }
@@ -46,6 +47,13 @@ def _normalize_pr(pr: dict[str, Any]) -> dict[str, Any]:
         "created": _millis_to_iso(pr.get("createdDate")),
         "description": pr.get("description"),
     }
+
+
+def _normalize_assigned_reviewers(pr: dict[str, Any]) -> list[dict[str, str]] | None:
+    reviewers = pr.get("reviewers")
+    if reviewers is None:
+        return None
+    return [{"reviewer": _display_user(reviewer.get("user"))} for reviewer in reviewers]
 
 
 def _normalize_reviewers(pr: dict[str, Any]) -> list[dict[str, str]]:

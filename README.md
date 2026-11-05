@@ -169,7 +169,7 @@ Network, response decoding, and output filesystem failures produce an error on s
 
 ## Output Format
 
-The Markdown output starts with PR title, author, state, branch direction, creation date, and description. It then includes a review outcome table when reviewer decisions are available, followed by inline comments grouped by file and line, then general comments. Replies are nested under their parent comment.
+The Markdown output starts with PR title, author, state, branch direction, creation date, and description. It then lists assigned reviewers and includes a review outcome table when reviewer decisions are available, followed by inline comments grouped by file and line, then general comments. Replies are nested under their parent comment.
 
 The resulting `.md` file is designed to be pasted or attached as LLM context when asking for a review summary, unresolved issue list, implementation follow-up plan, or risk analysis.
 
@@ -181,9 +181,24 @@ The exporter uses only the Python standard library so it is easy to audit, simpl
 
 The MCP service runs independently in Rancher Desktop on macOS (dockerd/moby).
 It exposes exactly one read-only tool,
-`export_pr_comments`, accepting either `pr_url` or `pr_id` and returning the
-existing `provider`, `pr`, `reviewers`, and `comments` JSON. All Python dependencies run inside the image; the Mac needs
+`export_pr_comments`, requiring one full PR URL as `pr_url` and returning the
+`provider`, `pr`, `assigned_reviewers`, `reviewers`, and `comments` JSON. All Python dependencies run inside the image; the Mac needs
 only Docker and its bundled Bash. Both Apple Silicon and Intel use native images.
+
+The tool exports general/Overview comments, inline comments, replies, and reviewer
+decisions. For Bitbucket Server/Data Center, comments come from the PR activities
+API; activities without comments are omitted. Deleted comments are excluded by
+default unless configured otherwise.
+
+`assigned_reviewers` lists assigned reviewers as `{"reviewer": "Display name"}`
+objects, including people who have not commented or recorded a decision. An empty
+list means no assignments reported; `null` means assignment data is unavailable.
+Older exports without this field also leave assignments unknown. Use only this
+field for assignment claims. The historical `reviewers` field contains recorded
+review decisions, so `reviewers: []` does not mean nobody is assigned. Comments,
+assignments, and decisions are independent. Markdown shows assignments before
+review outcomes, using “None reported” for an empty list and “Unknown” for `null`;
+it omits the assignment section for older exports without the field.
 
 From a checkout inside your home folder:
 
@@ -195,24 +210,17 @@ From a checkout inside your home folder:
 ```
 
 Setup provides brief guidance and examples for the Bitbucket base URL, optional
-Server username, optional repository defaults, and token. For Server/Data Center,
+Server username and token. For Server/Data Center,
 use a base URL such as `https://bitbucket.example.com/bitbucket`, including any
 context path; for Cloud, use `https://bitbucket.org`. A Server username such as
 `jane.doe` selects the exporter's existing Basic authentication; omit it for Bearer/PAT.
 Cloud does not use this username.
 
-Repository defaults use identifiers from a PR URL, rather than display names:
-
-- Server/Data Center: `https://bitbucket.example.com/bitbucket/projects/PROJ/repos/my-repository/pull-requests/42`
-  has project key `PROJ` and repository slug `my-repository`.
-- Cloud: `https://bitbucket.org/my-workspace/my-repository/pull-requests/42`
-  has workspace slug `my-workspace` and repository slug `my-repository`.
-
-Complete defaults enable PR-number input such as `42`; full PR URLs work without defaults.
-Repeat setup preserves existing files; `setup --tokens` rotates the PAT. Use `setup --defaults` to set, change, or clear
-the default repository; both flags can be combined. Press Enter to retain existing
-repository fields, or answer no to clear repository defaults. TOML comments and
-unrelated settings are preserved. An exported
+The full PR URL supplies the repository and PR number. Bare PR numbers and MCP
+`pr_id` input are no longer supported. Repository defaults in existing config
+files are ignored for request targeting; standalone CLI defaults still work.
+Repeat setup preserves existing files; `setup --tokens` rotates the PAT.
+An exported
 `BB_TOKEN` can supply setup's token without typing it. Setup acknowledges this
 without displaying the value; otherwise, token input is hidden. The token is saved
 separately from configuration. Unset `BB_TOKEN` afterward.
@@ -222,7 +230,7 @@ non-secret settings, while `bitbucket.pat` is a separate secret file. The folder
 has mode 700 and files have mode 600. Runtime mounts it read-only and reads the
 PAT into `BB_TOKEN` inside the process, rather than Docker's stored environment.
 Keep this folder outside repositories and synced folders. Setup validates local
-configuration; `check <PR_URL|PR_ID>` verifies actual API access and prints counts only.
+configuration; `check <PR_URL>` verifies actual API access and prints counts only.
 
 ```toml
 [mcp]
@@ -234,11 +242,8 @@ include_deleted = false
 ```
 
 A full URL determines the repository and PR; its instance must match the configured
-base. With complete repository defaults, the agent can instead call
-`export_pr_comments(pr_id=42)`. The tool description advertises the configured
-instance and default repository. Supplying both inputs, neither input, or an invalid
-ID produces an error before any API request. Partial defaults still permit URLs;
-PR-number calls identify which settings are missing.
+base. Missing URLs and bare numbers fail before Bitbucket access. The tool
+advertises the configured instance and accepts no repository-default shortcut.
 
 Server/Data Center can reuse an exporter configuration without an `[mcp]` table:
 
@@ -252,40 +257,36 @@ repo = "R"
 include_deleted = false
 ```
 
-For Cloud:
+For Cloud, new configuration should specify the instance explicitly:
 
 ```toml
-[cloud]
-workspace = "my-workspace"
-repo = "my-repository"
+[mcp]
+base_url = "https://bitbucket.org"
 [defaults]
 include_deleted = false
 ```
 
-`[mcp].base_url` takes precedence; otherwise the server URL or Cloud defaults
-identify the instance. If both providers are populated, set `[mcp].base_url`
+`[mcp].base_url` takes precedence; otherwise the server URL or legacy Cloud defaults
+identify the instance. Legacy repository identifiers are used only for this
+instance inference, never to select the requested repository or PR. If both providers are populated, set `[mcp].base_url`
 explicitly. Server usernames resolve from `[server].username`, then
 `[defaults].username`, then the MCP process's `BB_USERNAME`. Host environment
 variables are not automatically forwarded to the container; use TOML for the
 container username. Output path and format settings remain CLI-specific.
 
-Existing installations can run `setup --defaults`, or copy a non-secret exporter
-TOML to the container's `config.toml` and keep the separate PAT file. The service
-continues to read that explicit file, rather than searching the agent's working
-directory. Stop/start the service and reconnect OpenCode after configuration
-changes. `preflight` and `doctor` report whether PR-number input is available.
+Existing installations can keep their config and separate PAT file unchanged.
+The service reads that explicit file rather than searching the agent's working
+directory. `setup --defaults` has been removed. After rebuilding with `start`,
+reconnect OpenCode (or your MCP client) to refresh the required URL-only schema.
+`preflight` and `doctor` report the configured instance.
 
-```bash
-./container/bitbucket-pr-mcp.sh setup --defaults
-./container/bitbucket-pr-mcp.sh check 42
-```
 Cloud uses the existing `api.bitbucket.org` client. PR paths with encoded segments,
 backslashes or dot segments are rejected. Output is returned in memory; CLI
 output-file/format defaults do not apply. Visible replies to omitted deleted
 parents retain their `parent_id`. Comments and descriptions are untrusted source
 data, and exports contain no diff or verified thread-resolution status.
 
-The image installs the optional MCP extra (SDK v2 and TOML Kit for guided edits) (`pip install '.[mcp]'`). Ordinary
+The image installs the optional MCP extra (SDK v2 and TOML Kit for setup) (`pip install '.[mcp]'`). Ordinary
 CLI and bundled skill use still require only the standard library. The MCP
 container uses its own PAT directly, independently of the skill's egress mode.
 Ensure Rancher Desktop has VPN/network access and trusts your Bitbucket server's

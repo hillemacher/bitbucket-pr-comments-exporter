@@ -17,25 +17,9 @@ class Settings:
     base_url: str
     username: str | None = None
     include_deleted: bool = False
-    workspace: str | None = None
-    project: str | None = None
-    repo: str | None = None
-
-    @property
-    def provider(self) -> str:
-        return 'cloud' if self.base_url == 'https://bitbucket.org' else 'server'
-
-    @property
-    def missing_defaults(self) -> list[str]:
-        keys = ('workspace', 'repo') if self.provider == 'cloud' else ('project', 'repo')
-        return [f'[{self.provider}].{key}' for key in keys if not getattr(self, key)]
 
     def describe(self) -> str:
-        repository = '/'.join(value or '?' for value in (
-            self.workspace if self.provider == 'cloud' else self.project, self.repo))
-        availability = ('PR-number input available' if not self.missing_defaults else
-                        'PR-number input unavailable: missing ' + ', '.join(self.missing_defaults))
-        return f'Instance: {self.base_url}; default repository: {repository}; {availability}.'
+        return f'Instance: {self.base_url}.'
 
 
 def canonical_base(url: str) -> str:
@@ -85,15 +69,6 @@ def settings_from_config(config: dict[str, Any]) -> Settings:
     base = canonical_base(base)
     if urlsplit(base).hostname == 'bitbucket.org' and base != 'https://bitbucket.org':
         raise BitbucketExportError('Cloud base URL must be https://bitbucket.org.')
-    provider = 'cloud' if base == 'https://bitbucket.org' else 'server'
-    provider_config = tables[provider]
-    values = {}
-    for key in (('workspace', 'repo') if provider == 'cloud' else ('project', 'repo')):
-        value = provider_config.get(key)
-        if value is not None and (not isinstance(value, str) or not value or value in {'.', '..'}
-                                  or any(c.isspace() or c in '/\\' for c in value)):
-            raise BitbucketExportError(f'[{provider}].{key} must be a nonempty repository identifier without path separators.')
-        values[key] = value
     username = server_config.get('username')
     if username is None:
         username = defaults.get('username')
@@ -102,25 +77,11 @@ def settings_from_config(config: dict[str, Any]) -> Settings:
     deleted = defaults.get('include_deleted', False)
     if not isinstance(deleted, bool) or (username is not None and not isinstance(username, str)):
         raise BitbucketExportError('Expected a username string and boolean [defaults].include_deleted.')
-    return Settings(base, username if provider == 'server' else None, deleted, **values)
+    return Settings(base, username if base != 'https://bitbucket.org' else None, deleted)
 
 
-def resolve_pr(settings: Settings, pr_url: str | None = None, *, pr_id: int | None = None) -> tuple[str, dict[str, str]]:
-    """Resolve either a complete URL or an ID, before any authenticated requests."""
-    if (pr_url is None) == (pr_id is None):
-        raise BitbucketExportError('Provide exactly one of pr_url or pr_id.')
-    if pr_id is not None:
-        if type(pr_id) is not int or pr_id <= 0:
-            raise BitbucketExportError('pr_id must be a positive integer.')
-        if settings.missing_defaults:
-            raise BitbucketExportError('PR-number input needs ' + ', '.join(settings.missing_defaults) +
-                                       '; run setup --defaults or provide a full PR URL.')
-        values = {'pr': str(pr_id), 'repo': settings.repo}
-        if settings.provider == 'cloud':
-            values['workspace'] = settings.workspace
-        else:
-            values.update(server=settings.base_url, project=settings.project)
-        return settings.provider, values
+def resolve_pr(settings: Settings, pr_url: str) -> tuple[str, dict[str, str]]:
+    """Resolve a complete URL before any authenticated requests."""
     provider = recognize_provider(pr_url)
     p = urlsplit(pr_url)
     if '%' in p.path or '\\' in pr_url or any(s in {'.', '..'} for s in p.path.split('/')):
@@ -135,8 +96,8 @@ def resolve_pr(settings: Settings, pr_url: str | None = None, *, pr_id: int | No
     return provider, values
 
 
-def export_pr(settings: Settings, pr_url: str | None = None, *, pr_id: int | None = None) -> dict[str, Any]:
-    provider, values = resolve_pr(settings, pr_url, pr_id=pr_id)
+def export_pr(settings: Settings, pr_url: str) -> dict[str, Any]:
+    provider, values = resolve_pr(settings, pr_url)
     token = os.environ.get('BB_TOKEN')
     if not token:
         raise BitbucketExportError('Missing Bitbucket token; run setup.')

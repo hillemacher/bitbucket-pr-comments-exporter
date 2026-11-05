@@ -125,9 +125,10 @@ class SkillWrapperTests(unittest.TestCase):
                                                         "comments": [{"id": 3, "text": "Still needs a test"}]}]}}]
         scenarios = (
             (CLOUD_URL, "cloud", "paginate_cloud", cloud_comments,
-             {"id": 42, "participants": [{"user": {"display_name": "Reviewer"}, "approved": True}]}),
+             {"id": 42, "reviewers": [{"display_name": "Assigned"}], "participants": [{"user": {"display_name": "Reviewer"}, "approved": True}]}),
             (SERVER_URL, "server", "paginate_server", server_activities,
-             {"id": 42, "reviewers": [{"user": {"displayName": "Reviewer"}, "status": "APPROVED"}]}),
+             {"id": 42, "reviewers": [{"user": {"displayName": "Reviewer"}, "status": "APPROVED"},
+                                        {"user": {"displayName": "Assigned"}, "status": "UNAPPROVED"}]}),
         )
         for url, provider, pagination, comments, pr in scenarios:
             with self.subTest(provider=provider), tempfile.TemporaryDirectory() as directory:
@@ -140,6 +141,9 @@ class SkillWrapperTests(unittest.TestCase):
                     self.assertEqual(wrapper.main([url, "--output", str(output)]), 0)
                 result = json.loads(output.read_text())
                 self.assertEqual(result["provider"], provider)
+                expected_assigned = ([{"reviewer": "Assigned"}] if provider == "cloud" else
+                                     [{"reviewer": "Reviewer"}, {"reviewer": "Assigned"}])
+                self.assertEqual(result["assigned_reviewers"], expected_assigned)
                 self.assertEqual(result["reviewers"], [{"reviewer": "Reviewer", "decision": "approved"}])
                 self.assertEqual([comment["id"] for comment in result["comments"]], [2, 3])
                 self.assertEqual([comment["parent_id"] for comment in result["comments"]], [1, 2])

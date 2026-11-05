@@ -4,6 +4,17 @@ from bb_pr_export.renderer import render_markdown
 
 
 class RendererTests(unittest.TestCase):
+    def test_assignment_section_and_legacy_payloads(self):
+        export = {"pr": {"id": 42}, "reviewers": [{"reviewer": "Bob", "decision": "approved"}]}
+        self.assertNotIn("## Assigned reviewers", render_markdown(export))
+        for assigned, expected in ((None, "Unknown"), ([], "None reported"),
+                                   ([{"reviewer": "Alice"}, {"reviewer": "Bob"}], "- Alice\n- Bob")):
+            with self.subTest(assigned=assigned):
+                markdown = render_markdown({**export, "assigned_reviewers": assigned})
+                self.assertIn("## Assigned reviewers\n\n" + expected, markdown)
+                self.assertLess(markdown.index("## Assigned reviewers"), markdown.index("## Review outcome"))
+                self.assertIn("| Bob | ✅ Approved |", markdown)
+
     def test_renders_review_table_inline_comments_and_replies(self):
         export = {
             "pr": {

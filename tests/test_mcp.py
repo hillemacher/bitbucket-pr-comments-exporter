@@ -13,7 +13,7 @@ from bb_pr_export.mcp_export import Settings, export_pr, load_settings
 
 CLOUD = 'https://bitbucket.org/w/r/pull-requests/42'
 SERVER = 'https://bb.example/bitbucket/projects/P/repos/r/pull-requests/42/overview'
-PAYLOAD = {'provider': 'cloud', 'pr': {'id': 42}, 'reviewers': [], 'comments': [
+PAYLOAD = {'provider': 'cloud', 'pr': {'id': 42}, 'assigned_reviewers': [{'reviewer': 'Waiting'}], 'reviewers': [], 'comments': [
     {'id': 1, 'deleted': True}, {'id': 2, 'parent_id': 1, 'body': 'Visible reply'}]}
 
 
@@ -100,11 +100,16 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             async with Client(create_server(Settings('https://bitbucket.org'))) as client:
                 tools = (await client.list_tools()).tools
                 self.assertEqual([tool.name for tool in tools], ['export_pr_comments'])
-                self.assertEqual(tools[0].input_schema.get('required', []), [])
-                self.assertEqual(set(tools[0].input_schema['properties']), {'pr_url', 'pr_id'})
+                for coverage in ('general/Overview', 'inline', 'replies',
+                                 'assigned_reviewers lists assignments', 'reviewers lists decisions'):
+                    self.assertIn(coverage, tools[0].description)
+                self.assertEqual(tools[0].input_schema['required'], ['pr_url'])
+                self.assertEqual(set(tools[0].input_schema['properties']), {'pr_url'})
+                self.assertEqual(tools[0].input_schema['properties']['pr_url']['type'], 'string')
                 self.assertTrue(tools[0].annotations.read_only_hint)
                 result = await client.call_tool('export_pr_comments', {'pr_url': CLOUD})
                 self.assertFalse(result.is_error)
+                self.assertEqual(result.structured_content['assigned_reviewers'], PAYLOAD['assigned_reviewers'])
                 self.assertEqual(result.structured_content['comments'], PAYLOAD['comments'][1:])
                 self.assertEqual(json.loads(result.content[0].text), result.structured_content)
                 rejected = await client.call_tool('export_pr_comments', {'pr_url': 'bad'})
@@ -125,41 +130,34 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
 
 class EnhancedConfigTests(unittest.TestCase):
-    def test_resolution_and_provider_selection(self):
+    def test_legacy_config_infers_instance_but_url_selects_repository(self):
         from bb_pr_export.mcp_export import settings_from_config, resolve_pr
-        cases = [
-            ({'server': {'server': 'https://bb.example/bitbucket', 'project': 'P', 'repo': 'configured'}}, 'server'),
-            ({'cloud': {'workspace': 'w', 'repo': 'configured'}}, 'cloud'),
-        ]
-        for config, provider in cases:
-            settings = settings_from_config(config)
-            self.assertEqual(resolve_pr(settings, pr_id=42)[1]['repo'], 'configured')
-            with patch.dict(os.environ, {'BB_TOKEN': 'fixture'}), patch(
-                    f'bb_pr_export.{provider}.export_pull_request', return_value=PAYLOAD) as fetch:
-                export_pr(settings, pr_id=42)
-                self.assertIn('configured', fetch.call_args.args)
-                self.assertIn('42', fetch.call_args.args)
-            url = CLOUD if provider == 'cloud' else SERVER
-            self.assertEqual(resolve_pr(settings, url)[1]['repo'], 'r')
-            self.assertIn('PR-number input available', settings.describe())
-        config = {'server': {'server': 'https://bb.example', 'project': 'P'}, 'cloud': {'repo': 'r'}}
+        for config, provider, url, expected in (
+            ({'server': {'server': 'https://bb.example/bitbucket', 'project': 'OTHER', 'repo': 'configured'}},
+             'server', SERVER, ('https://bb.example/bitbucket', 'P', 'r', '42', 'fixture', None)),
+            ({'cloud': {'workspace': 'other-w', 'repo': 'configured'}},
+             'cloud', CLOUD, ('w', 'r', '42', 'fixture')),
+        ):
+            with self.subTest(provider=provider):
+                settings = settings_from_config(config)
+                self.assertEqual(resolve_pr(settings, url)[1]['repo'], 'r')
+                with patch.dict(os.environ, {'BB_TOKEN': 'fixture'}), patch(
+                        f'bb_pr_export.{provider}.export_pull_request', return_value=PAYLOAD) as fetch:
+                    export_pr(settings, url)
+                    fetch.assert_called_once_with(*expected)
+                self.assertEqual(settings.describe(), f'Instance: {settings.base_url}.')
+        config = {'server': {'server': 'https://bb.example'}, 'cloud': {'repo': 'r'}}
         with self.assertRaisesRegex(BitbucketExportError, 'Both providers'):
             settings_from_config(config)
         config['mcp'] = {'base_url': 'https://bitbucket.org'}
-        self.assertEqual(settings_from_config(config).provider, 'cloud')
+        self.assertEqual(settings_from_config(config).base_url, 'https://bitbucket.org')
 
-    def test_invalid_or_missing_input_never_fetches(self):
+    def test_unused_repository_identifiers_are_not_validated(self):
         from bb_pr_export.mcp_export import settings_from_config
-        settings = settings_from_config({'mcp': {'base_url': 'https://bitbucket.org'}, 'cloud': {'workspace': 'w'}})
-        self.assertIn('[cloud].repo', settings.describe())
-        with patch('bb_pr_export.cloud.export_pull_request') as fetch:
-            for args in ({}, {'pr_id': 42}, {'pr_id': 0}, {'pr_id': -1}, {'pr_id': True},
-                         {'pr_id': 1.5}, {'pr_id': '42'}, {'pr_url': CLOUD, 'pr_id': 42}):
-                with self.subTest(args=args), self.assertRaises(BitbucketExportError):
-                    export_pr(settings, **args)
-            fetch.assert_not_called()
-        with patch.dict(os.environ, {'BB_TOKEN': 'fixture'}), patch('bb_pr_export.cloud.export_pull_request', return_value=PAYLOAD):
-            self.assertEqual(export_pr(settings, CLOUD)['pr']['id'], 42)
+        for provider in ('server', 'cloud'):
+            settings = settings_from_config({'mcp': {'base_url': 'https://bitbucket.org'},
+                                             provider: {'repo': '../legacy', 'project': 123, 'workspace': False}})
+            self.assertEqual(settings.base_url, 'https://bitbucket.org')
 
     def test_username_precedence(self):
         from bb_pr_export.mcp_export import settings_from_config
@@ -173,20 +171,31 @@ class EnhancedConfigTests(unittest.TestCase):
 
 
 @unittest.skipUnless(importlib.util.find_spec('mcp'), 'Install the optional MCP extra')
-class NumericMCPTests(unittest.IsolatedAsyncioTestCase):
-    async def test_number_input_and_context(self):
+class URLOnlyMCPTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_id_only_and_invalid_url_never_fetch(self):
         from mcp import Client
         from bb_pr_export.mcp_server import create_server
-        settings = Settings('https://bitbucket.org', workspace='w', repo='r')
-        with patch.dict(os.environ, {'BB_TOKEN': 'fixture'}), patch('bb_pr_export.cloud.export_pull_request', return_value=PAYLOAD) as fetch:
-            async with Client(create_server(settings)) as client:
-                tool = (await client.list_tools()).tools[0]
-                self.assertIn('w/r', tool.description)
-                result = await client.call_tool('export_pr_comments', {'pr_id': 42})
-                self.assertFalse(result.is_error)
-                fetch.assert_called_once_with('w', 'r', '42', 'fixture')
-                fetch.reset_mock()
-                for args in ({}, {'pr_id': True}, {'pr_id': 0}, {'pr_id': 1.5}, {'pr_url': CLOUD, 'pr_id': 42}):
-                    result = await client.call_tool('export_pr_comments', args)
-                    self.assertTrue(result.is_error)
+        with patch.dict(os.environ, {'BB_TOKEN': 'fixture'}), patch('bb_pr_export.cloud.export_pull_request') as fetch:
+            async with Client(create_server(Settings('https://bitbucket.org'))) as client:
+                for args in ({}, {'pr_id': 42}, {'pr_url': '42'}, {'pr_url': 42}, {'pr_url': None}):
+                    with self.subTest(args=args):
+                        result = await client.call_tool('export_pr_comments', args)
+                        self.assertTrue(result.is_error)
                 fetch.assert_not_called()
+
+    async def test_url_keeps_repository_with_legacy_defaults(self):
+        from mcp import Client
+        from bb_pr_export.mcp_server import create_server
+        from bb_pr_export.mcp_export import settings_from_config
+        for config, provider, url, expected in (
+            ({'cloud': {'workspace': 'default-w', 'repo': 'default-r'}}, 'cloud',
+             CLOUD, ('w', 'r', '42', 'fixture')),
+            ({'server': {'server': 'https://bb.example/bitbucket', 'project': 'DEFAULT', 'repo': 'default-r'}},
+             'server', SERVER, ('https://bb.example/bitbucket', 'P', 'r', '42', 'fixture', None)),
+        ):
+            with self.subTest(provider=provider), patch.dict(os.environ, {'BB_TOKEN': 'fixture'}), patch(
+                    f'bb_pr_export.{provider}.export_pull_request', return_value=PAYLOAD) as fetch:
+                async with Client(create_server(settings_from_config(config))) as client:
+                    result = await client.call_tool('export_pr_comments', {'pr_url': url})
+                    self.assertFalse(result.is_error)
+                    fetch.assert_called_once_with(*expected)

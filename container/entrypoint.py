@@ -38,7 +38,7 @@ def preflight():
     return settings
 
 
-def setup(renew: bool, update_defaults: bool = False) -> None:
+def setup(renew: bool) -> None:
     from tomlkit import document, dumps, parse, table
 
     path = CONFIG / 'config.toml'
@@ -59,47 +59,9 @@ def setup(renew: bool, update_defaults: bool = False) -> None:
             if 'server' not in doc:
                 doc['server'] = table()
             doc['server']['username'] = username
-    settings = settings_from_config(doc.unwrap())
-    if creating or update_defaults:
-        provider = settings.provider
-        keys = ('workspace', 'repo') if provider == 'cloud' else ('project', 'repo')
-        current = doc.get(provider, {})
-        enabled = any(current.get(key) for key in keys)
-        print('Complete repository defaults let you use a PR number (for example, 42). '
-              'Full PR URLs work without defaults.')
-        answer = input('Configure default repository? [' + ('Y/n' if enabled else 'y/N') + ']: ').strip().lower()
-        if answer not in ('', 'y', 'yes', 'n', 'no'):
-            raise BitbucketExportError('Answer yes or no; configuration was not changed.')
-        configure = answer in ('y', 'yes') or (not answer and enabled)
-        if configure:
-            if provider == 'cloud':
-                print('Example PR URL: https://bitbucket.org/my-workspace/my-repository/pull-requests/42\n'
-                      'Workspace slug: my-workspace; repository slug: my-repository.')
-            else:
-                print('Example PR URL: https://bitbucket.example.com/bitbucket/projects/PROJ/repos/my-repository/pull-requests/42\n'
-                      'Project key: PROJ; repository slug: my-repository.')
-            print('Enter identifiers, not display names or full URLs. '
-                  'Press Enter to retain the value in brackets; an empty bracket means no value.')
-            if provider not in doc:
-                doc[provider] = table()
-            for key in keys:
-                previous = current.get(key, '')
-                value = input(f'Default {key} [{previous}]: ').strip() or previous
-                if value:
-                    doc[provider][key] = value
-                else:
-                    doc[provider].pop(key, None)
-        elif provider in doc:
-            for key in keys:
-                doc[provider].pop(key, None)
-            if provider == 'cloud':
-                # Clearing inferred Cloud defaults must retain URL-only operation.
-                if 'mcp' not in doc:
-                    doc['mcp'] = table()
-                doc['mcp']['base_url'] = settings.base_url
     # Validate everything before modifying the existing file or PAT.
     settings_from_config(doc.unwrap())
-    if creating or update_defaults:
+    if creating:
         write_private(path, dumps(doc))
     if renew or not (CONFIG / 'bitbucket.pat').exists():
         print('The token is saved in bitbucket.pat, separately from config.toml.')
@@ -113,14 +75,11 @@ def setup(renew: bool, update_defaults: bool = False) -> None:
             raise BitbucketExportError('PAT must be nonempty and contain no whitespace.')
         write_private(CONFIG / 'bitbucket.pat', token + '\n')
     preflight()
-    print('Setup complete. Run check <PR_URL|PR_ID> to test access, then start.')
+    print('Setup complete. Run check <PR_URL> to test access, then start.')
 
 
 def check(settings, reference: str):
-    if reference.isascii() and reference.isdecimal():
-        result = export_pr(settings, pr_id=int(reference))
-    else:
-        result = export_pr(settings, reference)
+    result = export_pr(settings, reference)
     print(f"Export ok: {len(result['comments'])} comments, {len(result['reviewers'])} reviewer decisions")
     return result
 
@@ -139,12 +98,11 @@ def main():
     parser.add_argument('command', choices=['setup', 'preflight', 'serve', 'check', 'probe-mcp', 'image-fingerprint'])
     parser.add_argument('reference', nargs='?')
     parser.add_argument('--tokens', action='store_true')
-    parser.add_argument('--defaults', action='store_true', help='Configure or clear repository defaults')
     parser.add_argument('--probe-label', default='endpoint', help='Connection path shown in MCP probe output')
     args = parser.parse_args()
     try:
         if args.command == 'setup':
-            setup(args.tokens, args.defaults)
+            setup(args.tokens)
         elif args.command == 'image-fingerprint':
             image = json.load(sys.stdin)[0]
             stable = {key: image.get(key) for key in ('Architecture', 'Os', 'Variant', 'RootFS', 'Config')}
@@ -160,7 +118,7 @@ def main():
                 return serve(['--config', str(CONFIG / 'config.toml'), '--host-port', os.environ.get('BB_MCP_HOST_PORT', '9002')])
             if args.command == 'check':
                 if not args.reference:
-                    parser.error('check requires a PR URL or positive PR number')
+                    parser.error('check requires a full PR URL')
                 check(settings, args.reference)
             else:
                 print('preflight: ok')

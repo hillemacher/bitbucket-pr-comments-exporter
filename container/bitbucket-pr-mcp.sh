@@ -21,12 +21,12 @@ CONFIG_FILES=(config.toml bitbucket.pat)
 usage() {
   cat <<EOF
 Usage: bitbucket-pr-mcp.sh <command>
-  setup [--tokens] [--defaults]     Create config/PAT; --tokens rotates PAT, --defaults edits repository
+  setup [--tokens]    Create config/PAT; --tokens rotates PAT
   start [--autostart]  Build and start; optional unless-stopped restart policy
   stop                Remove the managed service and disable autostart
   status              Show status and restart policy
   logs [-f]           Show service logs
-  check <PR_URL|PR_ID>      Test a complete export, reporting counts only
+  check <PR_URL>      Test a complete export, reporting counts only
   doctor              Check Docker, permissions and MCP connectivity
 Environment: BB_MCP_PORT (default 9002), BB_CONFIG_DIR (default ~/.config/bitbucket-pr-mcp).
 EOF
@@ -189,7 +189,7 @@ cmd_setup() {
   local setup_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --tokens|--defaults) setup_args+=("$1") ;;
+      --tokens) setup_args+=("$1") ;;
       *) die "unknown setup option: $1" ;;
     esac
     shift
@@ -367,7 +367,7 @@ cmd_check() {
   require_docker
   require_config
   ensure_image
-  [[ $# -eq 1 ]] || die "usage: $0 check <PR_URL|PR_ID>"
+  [[ $# -eq 1 ]] || die "usage: $0 check <PR_URL>"
   run_tool check "$1"
 }
 

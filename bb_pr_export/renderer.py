@@ -31,6 +31,17 @@ def render_markdown(export: dict[str, Any], *, include_deleted: bool = False) ->
         "",
     ]
 
+    if "assigned_reviewers" in export:
+        assigned = export["assigned_reviewers"]
+        lines.extend(["## Assigned reviewers", ""])
+        if assigned is None:
+            lines.append("Unknown")
+        elif not assigned:
+            lines.append("None reported")
+        else:
+            lines.extend(f"- {reviewer.get('reviewer') or 'Unknown'}" for reviewer in assigned)
+        lines.extend(["", "---", ""])
+
     if outcomes:
         lines.extend(["## Review outcome", "", "| Reviewer | Decision |", "|---|---|"])
         for reviewer in outcomes:
