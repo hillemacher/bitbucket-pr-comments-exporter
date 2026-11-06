@@ -8,7 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from bb_pr_export.http import AuthError, BitbucketExportError, NetworkError, NotFoundError
+from bb_pr_export.http import AuthError, BitbucketExportError, ExportLimitError, NetworkError, NotFoundError
+from bb_pr_export.limits import Limits
 from bb_pr_export.mcp_export import Settings, export_pr, load_settings
 
 CLOUD = 'https://bitbucket.org/w/r/pull-requests/42'
@@ -58,6 +59,26 @@ class ExportServiceTests(unittest.TestCase):
                 with self.assertRaises(BitbucketExportError) as caught:
                     export_pr(Settings('https://bitbucket.org'), CLOUD)
                 self.assertNotIn('secret-test-token', str(caught.exception))
+
+    def test_limit_errors_are_reported_with_limits_hint(self):
+        for message in ('Export deadline exceeded; no complete export is available.',
+                        'Export response size limit exceeded.', 'Export pagination limit exceeded.'):
+            with self.subTest(message=message), \
+                    patch('bb_pr_export.cloud.export_pull_request', side_effect=ExportLimitError(message)):
+                with self.assertRaises(ExportLimitError) as caught:
+                    export_pr(Settings('https://bitbucket.org'), CLOUD)
+                self.assertIn(message, str(caught.exception))
+                self.assertIn('[limits]', str(caught.exception))
+
+    def test_real_page_limit_reaches_mcp_caller(self):
+        page = {'values': [], 'next': 'https://api.bitbucket.org/2.0/next'}
+        settings = Settings('https://bitbucket.org', limits=Limits(max_pages=1))
+        with patch('bb_pr_export.cloud.fetch_json', return_value={'id': 42}), \
+                patch('bb_pr_export.http.fetch_json', return_value=page) as pages:
+            with self.assertRaises(ExportLimitError) as caught:
+                export_pr(settings, CLOUD)
+        self.assertIn('pagination limit', str(caught.exception))
+        self.assertEqual(pages.call_count, 1)
 
     def test_config_validation(self):
         with tempfile.TemporaryDirectory() as directory:

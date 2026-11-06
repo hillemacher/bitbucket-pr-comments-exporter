@@ -37,18 +37,18 @@ class Budget:
         self.pages = 0
 
     def remaining(self) -> float:
-        from .http import BitbucketExportError
+        from .http import ExportLimitError
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
-            raise BitbucketExportError('Export deadline exceeded; no complete export is available.')
+            raise ExportLimitError('Export deadline exceeded; no complete export is available.')
         return remaining
 
     def page(self) -> None:
-        from .http import BitbucketExportError
+        from .http import ExportLimitError
         self.remaining()
         self.pages += 1
         if self.pages > self.limits.max_pages:
-            raise BitbucketExportError('Export pagination limit exceeded.')
+            raise ExportLimitError('Export pagination limit exceeded.')
 
 
 _current: ContextVar[Budget | None] = ContextVar('export_budget', default=None)

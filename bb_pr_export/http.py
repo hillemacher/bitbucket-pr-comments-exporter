@@ -18,6 +18,10 @@ class BitbucketExportError(Exception):
     """Base error raised by the exporter."""
 
 
+class ExportLimitError(BitbucketExportError):
+    """A configured export limit was reached; messages never include upstream data."""
+
+
 @dataclass(slots=True)
 class HttpError(BitbucketExportError):
     status: int
@@ -114,7 +118,7 @@ def fetch_json(
         error = _to_http_error(exc)
         if retry_5xx and isinstance(error, TransientHttpError):
             if sleep_seconds >= current_budget().remaining():
-                raise BitbucketExportError('Export deadline exceeded before retry.') from None
+                raise ExportLimitError('Export deadline exceeded before retry.') from None
             time.sleep(sleep_seconds)
             return fetch_json(url, headers, retry_5xx=False, sleep_seconds=sleep_seconds)
         raise error from exc
@@ -197,7 +201,7 @@ def _to_http_error(exc: urllib.error.HTTPError) -> HttpError:
 def _read_error_message(exc: urllib.error.HTTPError) -> str:
     try:
         body = _read_body(exc).decode("utf-8")
-    except BitbucketExportError:
+    except ExportLimitError:
         raise
     except Exception:
         return exc.reason or "request failed"
@@ -238,7 +242,7 @@ def _read_body(response) -> bytes:
         size += len(part)
         budget.total_bytes += len(part)
         if size > budget.limits.max_response_bytes or budget.total_bytes > budget.limits.max_total_bytes:
-            raise BitbucketExportError('Export response size limit exceeded.')
+            raise ExportLimitError('Export response size limit exceeded.')
         if not part:
             return b''.join(parts)
         parts.append(part)
