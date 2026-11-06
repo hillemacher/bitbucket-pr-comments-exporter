@@ -76,7 +76,9 @@ def main():
             (path/name).chmod(0o600)
         try:
             docker('network','create',network)
+            # Run as the host user: the per-run directory is 0700 and key.pem is 0600.
             docker('run','-d','--name',fixture,'--network',network,'--network-alias','bb-fixture',
+                   '--user',f'{os.getuid()}:{os.getgid()}',
                    '--entrypoint','python3','-v',f'{path}:/fixture:ro',image,'/fixture/fixture.py')
             # Select a host port before launch so transport security can use it.
             import socket
