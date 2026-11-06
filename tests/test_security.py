@@ -69,6 +69,9 @@ class ReleasePolicyTests(unittest.TestCase):
             self.assertLess(source.index('Scan image before upload'), source.index('docker push'))
             self.assertIn('if: always()', source)
             self.assertIn('dist/image-security/sbom.cdx.json', source)
+            publication = 'Upload candidate ZIP' if name == 'candidate' else 'Attach bundle to GitHub'
+            self.assertLess(source.index('Scan final ' + name + ' bundle'), source.index(publication))
+            self.assertIn('--artifacts dist --output "$RUNNER_TEMP/publish-security"', source)
 
     def test_workflow_actions_are_sha_pinned(self):
         import re
