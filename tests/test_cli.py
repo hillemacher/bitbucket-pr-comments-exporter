@@ -220,11 +220,11 @@ class OutputErrorTests(unittest.TestCase):
     @patch('bb_pr_export.cli._load_config', return_value={})
     @patch('bb_pr_export.cli.cloud.export_pull_request', return_value=EXPORT)
     def test_filesystem_errors_are_reported(self, fetch, load):
-        for operation in ('mkdir', 'write_text'):
+        for operation in ('bb_pr_export.files.Path.mkdir', 'bb_pr_export.files.tempfile.mkstemp', 'bb_pr_export.files.os.replace'):
             with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
-                path = Path(directory) / 'out.md'
+                path = Path(directory) / 'new' / 'out.md'
                 stdout, stderr = io.StringIO(), io.StringIO()
-                with patch.object(Path, operation, side_effect=PermissionError(13, 'Permission denied')), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                with patch(operation, side_effect=PermissionError(13, 'Permission denied')), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                     code = main(['cloud', '--workspace', 'w', '--repo', 'r', '--pr', '1', '--output', str(path)])
                 self.assertEqual(code, 1)
                 self.assertIn(str(path), stderr.getvalue())
@@ -251,3 +251,74 @@ class AuthenticationMessageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrivateOutputTests(unittest.TestCase):
+    def test_new_and_replaced_exports_and_directories_are_private(self):
+        import os
+        from bb_pr_export.files import write_private
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'nested' / 'exports' / 'review.json'
+            previous = os.umask(0o022)
+            try:
+                write_private(path, 'first')
+                if os.name == 'posix':
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                    self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+                    self.assertEqual(path.parent.parent.stat().st_mode & 0o777, 0o700)
+                path.chmod(0o644)
+                write_private(path, 'second')
+                self.assertEqual(path.read_text(), 'second')
+                if os.name == 'posix':
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            finally:
+                os.umask(previous)
+
+    def test_failed_replacement_and_symlinks_preserve_existing_content(self):
+        from bb_pr_export.files import write_private
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'review.json'
+            path.write_text('original')
+            with patch('bb_pr_export.files.os.replace', side_effect=OSError('failure')):
+                with self.assertRaises(OSError):
+                    write_private(path, 'replacement')
+            self.assertEqual(path.read_text(), 'original')
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+            link = Path(directory) / 'link.json'
+            link.symlink_to(path)
+            with self.assertRaises(OSError):
+                write_private(link, 'replacement')
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(path.read_text(), 'original')
+            with self.assertRaises(OSError):
+                write_private(Path(directory), 'replacement')
+
+
+class CredentialRedactionTests(unittest.TestCase):
+    @patch('bb_pr_export.cli._load_config', return_value={})
+    def test_http_and_network_errors_redact_bearer_and_basic_credentials(self, load):
+        import base64
+        from bb_pr_export.http import HttpError, NetworkError
+        token, user = 'audit-dummy-sensitive-value', 'fixture-user'
+        encoded = base64.b64encode(f'{user}:{token}'.encode()).decode()
+        for error in (HttpError(400, f'echo {token} Basic {encoded}', 'https://bb.example'),
+                      NetworkError(f'echo {token} {encoded}', 'https://bb.example')):
+            output = io.StringIO()
+            with patch.dict('os.environ', {'BB_TOKEN': token}, clear=True), \
+                    patch('bb_pr_export.cli._fetch_export', side_effect=error), \
+                    contextlib.redirect_stderr(output):
+                code = main(['server', '--server', 'https://bb.example', '--project', 'P',
+                             '--repo', 'r', '--pr', '1', '--username', user])
+            self.assertEqual(code, 1)
+            self.assertNotIn(token, output.getvalue())
+            self.assertNotIn(encoded, output.getvalue())
+            self.assertIn('[REDACTED]', output.getvalue())
+
+    def test_configuration_diagnostics_do_not_include_invalid_source_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'invalid.toml'
+            config.write_text('token = unquoted-private-value')
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                self.assertEqual(main(['cloud', '--config', str(config)]), 1)
+            self.assertNotIn('unquoted-private-value', errors.getvalue())

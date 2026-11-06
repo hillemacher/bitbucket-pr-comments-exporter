@@ -39,6 +39,11 @@ BB_TOKEN=API_TOKEN bb-export cloud --workspace WORKSPACE --repo REPO --pr 42
 BB_USERNAME=USERNAME BB_TOKEN=TOKEN bb-export server --server https://bitbucket.example.com --project PROJECT --repo REPO --pr 42
 ```
 
+Exports are written atomically with owner-only permissions (`0600` on POSIX).
+New output directories use `0700`; existing directory permissions are preserved.
+Symlink and special-file destinations are rejected. On Windows, protect the
+output directory with an appropriate ACL.
+
 Use `--output FILE` to choose the destination and `--format json` to write normalized JSON instead of Markdown. Deleted comments are omitted in both formats by default. With `--include-deleted`, Markdown shows `~~[deleted]~~`; JSON includes the normalized records with `deleted: true` and any body supplied by Bitbucket. Visible replies are retained even when their deleted parent is omitted.
 
 ## Agent Skill
