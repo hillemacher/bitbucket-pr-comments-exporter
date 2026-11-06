@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from . import cloud, server
 from .cli import _load_config, _reject_secret_config
-from .http import AuthError, BitbucketExportError, NetworkError, NotFoundError
+from .http import AuthError, BitbucketExportError, ExportLimitError, NetworkError, NotFoundError
 from .urls import parse_pr_url, recognize_provider
 from .limits import Limits, export_budget, limits_from_config
 
@@ -99,8 +99,13 @@ def resolve_pr(settings: Settings, pr_url: str) -> tuple[str, dict[str, str]]:
 
 
 def export_pr(settings: Settings, pr_url: str) -> dict[str, Any]:
-    with export_budget(settings.limits):
-        return _export_pr(settings, pr_url)
+    try:
+        with export_budget(settings.limits):
+            return _export_pr(settings, pr_url)
+    except ExportLimitError as exc:
+        # Limit messages are fixed strings, so they are safe to show unchanged.
+        raise ExportLimitError(f'{exc} Raise the [limits] values in the MCP configuration '
+                               'if this PR is expected to be this large or slow.') from None
 
 
 def _export_pr(settings: Settings, pr_url: str) -> dict[str, Any]:
@@ -119,6 +124,8 @@ def _export_pr(settings: Settings, pr_url: str) -> dict[str, Any]:
         raise BitbucketExportError('Pull request not found or inaccessible.') from None
     except NetworkError:
         raise BitbucketExportError('Cannot reach Bitbucket; check network, VPN and certificate trust.') from None
+    except ExportLimitError:
+        raise
     except BitbucketExportError:
         raise BitbucketExportError('Bitbucket returned an invalid or unsuccessful API response.') from None
     return {**result, 'comments': [c for c in result.get('comments', []) if settings.include_deleted or not c.get('deleted')]}
