@@ -180,7 +180,9 @@ For Bitbucket Server/Data Center, generate a personal access token with pull req
 
 ## Request and Output Errors
 
-HTTP connections and reads use a 30-second socket-operation timeout; this is not an overall export deadline. A transient HTTP 5xx response is retried once after two seconds. Timeouts, invalid responses, and rejected redirects are not retried.
+HTTP operations use a 30-second timeout within a shared 90-second export budget.
+The budget covers requests, reads, retries, and pagination. DNS resolution may
+exceed the socket timeout on some systems. A transient HTTP 5xx response is retried once after two seconds. Timeouts, invalid responses, and rejected redirects are not retried.
 
 Authenticated Bitbucket requests require HTTPS, including the initial URL. MCP
 setup rejects plaintext instance URLs. Redirects and Cloud pagination links must stay on the original origin (scheme, hostname, and port). Cross-origin redirects, including HTTPS downgrades, are rejected before forwarding credentials. If your server redirects to another host, configure its final API base URL directly.
@@ -397,10 +399,11 @@ listener. Missing listener data is reported as unverified. `doctor` also tests
 MCP from a container through `host.docker.internal`; fix routing/access rules if
 that probe fails, keeping the host port bound to loopback.
 
-Each socket operation has the exporter's existing 30-second timeout; exports
-spanning multiple pages may exceed OpenCode's configured two-minute timeout.
-A failed export returns an error rather than a partial success. Increase the
-client timeout for very large reviews.
+Exports default to a 90-second budget, 1,000 pagination pages, 8 MiB per response,
+and 64 MiB of total response data. Repeated pagination URLs are rejected. Limit
+failures return an error without a partial export. Configure `[limits]` in TOML
+for larger reviews and increase the client's timeout to match. Both CLI and MCP
+use these settings; see `bb-export.example.toml`.
 
 ### Prepare a local MCP preview
 

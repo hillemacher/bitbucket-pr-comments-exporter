@@ -10,6 +10,7 @@ from . import cloud, server
 from .cli import _load_config, _reject_secret_config
 from .http import AuthError, BitbucketExportError, NetworkError, NotFoundError
 from .urls import parse_pr_url, recognize_provider
+from .limits import Limits, export_budget, limits_from_config
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class Settings:
     base_url: str
     username: str | None = None
     include_deleted: bool = False
+    limits: Limits = Limits()
 
     def describe(self) -> str:
         return f'Instance: {self.base_url}.'
@@ -77,7 +79,7 @@ def settings_from_config(config: dict[str, Any]) -> Settings:
     deleted = defaults.get('include_deleted', False)
     if not isinstance(deleted, bool) or (username is not None and not isinstance(username, str)):
         raise BitbucketExportError('Expected a username string and boolean [defaults].include_deleted.')
-    return Settings(base, username if base != 'https://bitbucket.org' else None, deleted)
+    return Settings(base, username if base != 'https://bitbucket.org' else None, deleted, limits_from_config(config))
 
 
 def resolve_pr(settings: Settings, pr_url: str) -> tuple[str, dict[str, str]]:
@@ -97,6 +99,11 @@ def resolve_pr(settings: Settings, pr_url: str) -> tuple[str, dict[str, str]]:
 
 
 def export_pr(settings: Settings, pr_url: str) -> dict[str, Any]:
+    with export_budget(settings.limits):
+        return _export_pr(settings, pr_url)
+
+
+def _export_pr(settings: Settings, pr_url: str) -> dict[str, Any]:
     provider, values = resolve_pr(settings, pr_url)
     token = os.environ.get('BB_TOKEN')
     if not token:

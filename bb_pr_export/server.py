@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from typing import Any
+from .limits import bounded_export
 from urllib.parse import quote
 
 from .http import BitbucketExportError, auth_headers, fetch_json, paginate_server
 
 
+@bounded_export
 def export_pull_request(
     server_url: str,
     project: str,

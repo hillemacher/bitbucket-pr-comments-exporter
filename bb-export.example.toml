@@ -39,7 +39,7 @@ output_dir = "exports"
 # Output format: "md" for LLM-friendly Markdown, or "json" for normalized data.
 format = "md"
 
-# HTTP socket operations have a fixed 30-second timeout, including retries.
+# Socket operations have a maximum 30-second timeout within the export budget.
 
 # Omit deleted comments in both formats by default. If true, Markdown shows
 # ~~[deleted]~~ and JSON retains deleted records and any provider-supplied body.
@@ -54,3 +54,11 @@ include_deleted = false
 # When both providers are populated, this setting selects the instance.
 # Cloud: "https://bitbucket.org"
 base_url = "https://bitbucket.CompanyX"
+
+# Shared CLI/MCP export limits. All values must be positive and finite.
+# DNS resolution may overrun socket deadlines on some platforms.
+[limits]
+timeout_seconds = 90
+max_pages = 1000
+max_response_bytes = 8388608 # 8 MiB, including error responses
+max_total_bytes = 67108864 # 64 MiB across the entire export
