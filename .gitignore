@@ -28,6 +28,12 @@ env/
 .env
 .env.*
 bb-export.toml
+bitbucket.pat
+.setup-token.*
+/.bitbucket-pr-mcp/
+pr_*_comments.md
+pr_*_comments.json
+/exports/
 
 # Local reference guides
 /mcp-example-guides/

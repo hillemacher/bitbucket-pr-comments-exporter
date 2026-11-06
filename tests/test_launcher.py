@@ -32,6 +32,11 @@ elif a[0]=='inspect':
   key=fmt.split('"')[1]; out(c.get('labels',{}).get(key,''))
 elif a[0]=='run':
  if 'image-fingerprint' in a: sys.stdin.read(); out('a'*64)
+ if '/run/setup-token' in a:
+  mount=next(v for v in a if v.endswith(':/run/setup-token:ro'))
+  assert Path(mount.rsplit(':',2)[0]).read_text()==os.environ['BB_TOKEN']
+  assert (Path(mount.rsplit(':',2)[0]).stat().st_mode & 0o777)==0o600
+  assert '-e' not in a
  # preflight and MCP probes succeed without networking
 elif a[0]=='create':
  if os.environ.get('FAIL_CREATE'): sys.exit(1)
@@ -93,6 +98,12 @@ class LauncherTests(unittest.TestCase):
                     self.assertFalse((config/'.bitbucket-pr-mcp-previous-running').exists())
                     result=run('setup');self.assertEqual(result.returncode,0,result.stderr)
                     result=run('setup','--tokens');self.assertEqual(result.returncode,0,result.stderr)
+                    result=run('setup','--tokens',BB_TOKEN='private-setup-fixture');self.assertEqual(result.returncode,0,result.stderr)
+                    self.assertNotIn('private-setup-fixture', (base/'calls').read_text())
+                    self.assertEqual(list(config.glob('.setup-token.*')), [])
+                    result=run('setup',BB_TOKEN='private-setup-fixture',FAIL_PULL='1')
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertEqual(list(config.glob('.setup-token.*')), [])
                     result=run('setup','--defaults');self.assertNotEqual(result.returncode,0)
                     result=run('check','https://bitbucket.org/w/r/pull-requests/42');self.assertEqual(result.returncode,0,result.stderr)
                     calls=[json.loads(line) for line in (base/'calls').read_text().splitlines()]

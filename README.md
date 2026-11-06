@@ -253,8 +253,9 @@ files are ignored for request targeting; standalone CLI defaults still work.
 Repeat setup preserves existing files; `setup --tokens` rotates the PAT.
 An exported
 `BB_TOKEN` can supply setup's token without typing it. Setup acknowledges this
-without displaying the value; otherwise, token input is hidden. The token is saved
-separately from configuration. Unset `BB_TOKEN` afterward.
+without displaying the value; otherwise, token input is hidden. The launcher transfers an exported token through a temporary owner-only file,
+mounts it read-only for setup, and removes it on exit. It never passes the token
+as a Docker environment setting. The token is saved separately from configuration. Unset `BB_TOKEN` afterward.
 
 Configuration lives in `~/.config/bitbucket-pr-mcp/`: `config.toml` contains
 non-secret settings, while `bitbucket.pat` is a separate secret file. The folder

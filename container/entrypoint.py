@@ -28,7 +28,7 @@ def preflight():
     return settings
 
 
-def setup(renew: bool) -> None:
+def setup(renew: bool, token_file: Path | None = None) -> None:
     from tomlkit import document, dumps, parse, table
 
     path = CONFIG / 'config.toml'
@@ -55,11 +55,12 @@ def setup(renew: bool) -> None:
         write_private(path, dumps(doc))
     if renew or not (CONFIG / 'bitbucket.pat').exists():
         print('The token is saved in bitbucket.pat, separately from config.toml.')
-        if os.environ.get('BB_TOKEN'):
+        supplied_token = token_file.read_text() if token_file else os.environ.get('BB_TOKEN')
+        if supplied_token:
             print('Using the token supplied by BB_TOKEN.')
         else:
             print('Enter your Bitbucket token below; input is hidden.')
-        token = os.environ.get('BB_TOKEN') or getpass.getpass('Bitbucket PAT (hidden): ')
+        token = supplied_token or getpass.getpass('Bitbucket PAT (hidden): ')
         token = token.strip()
         if not token or any(c.isspace() for c in token):
             raise BitbucketExportError('PAT must be nonempty and contain no whitespace.')
@@ -88,11 +89,12 @@ def main():
     parser.add_argument('command', choices=['setup', 'preflight', 'serve', 'check', 'probe-mcp', 'image-fingerprint'])
     parser.add_argument('reference', nargs='?')
     parser.add_argument('--tokens', action='store_true')
+    parser.add_argument('--token-file', type=Path, help='Private setup input file; never a token value')
     parser.add_argument('--probe-label', default='endpoint', help='Connection path shown in MCP probe output')
     args = parser.parse_args()
     try:
         if args.command == 'setup':
-            setup(args.tokens)
+            setup(args.tokens, args.token_file)
         elif args.command == 'image-fingerprint':
             image = json.load(sys.stdin)[0]
             stable = {key: image.get(key) for key in ('Architecture', 'Os', 'Variant', 'RootFS', 'Config')}

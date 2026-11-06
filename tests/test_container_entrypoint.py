@@ -129,3 +129,17 @@ class ContainerEntrypointTests(unittest.TestCase):
                 entry.setup(True)
             self.assertEqual(path.read_text(), original)
             self.assertEqual(token.read_text(), 'original')
+
+
+@unittest.skipUnless(importlib.util.find_spec('tomlkit'), 'Install the optional MCP extra')
+class SetupFileTests(unittest.TestCase):
+    def test_private_input_file_supplies_token_without_environment(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(entry, 'CONFIG', Path(directory)), \
+                patch.dict(os.environ, {}, clear=True), patch('builtins.input', side_effect=['https://bitbucket.org', '']), \
+                patch.object(entry.getpass, 'getpass') as prompt, patch('sys.stdout', new_callable=io.StringIO) as output:
+            token_file = Path(directory) / 'input'
+            token_file.write_text('private-file-fixture')
+            entry.setup(False, token_file)
+            prompt.assert_not_called()
+            self.assertEqual((Path(directory) / 'bitbucket.pat').read_text().strip(), 'private-file-fixture')
+            self.assertNotIn('private-file-fixture', output.getvalue())
