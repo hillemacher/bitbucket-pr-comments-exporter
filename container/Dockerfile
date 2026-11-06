@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine@sha256:e064671ca452259bab50e8e2c7bd896e39e9a343bb06ca25234adf6fe18d0fc7
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/hillemacher/bitbucket-pr-comments-exporter" \
@@ -9,7 +9,10 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
 COPY bb_pr_export ./bb_pr_export
-RUN pip install --no-cache-dir '.[mcp]'
+RUN python -m pip install --no-cache-dir --upgrade pip==26.3 \
+    && python -m pip install --no-cache-dir '.[mcp]' \
+    && python -m pip uninstall --yes pip \
+    && rm -rf /usr/local/lib/python3.12/ensurepip
 COPY container/entrypoint.py /app/entrypoint.py
 USER 65532:65532
 WORKDIR /tmp
