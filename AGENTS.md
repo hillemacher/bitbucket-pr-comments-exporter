@@ -78,7 +78,8 @@ Ordinary branch pushes run tests without publishing images. Explicit
 `mcp-candidate-*` tags publish tested AMD64/ARM64 candidate images and a workflow
 artifact containing the digest-pinned ZIP and provenance metadata; they create
 no GitHub release. Stable `vX.Y.Z` tags must match package metadata and trigger
-the stable image and GitHub release workflow. Use explicit tag pushes rather
+the stable image and GitHub release workflow, which also moves `:latest` when the
+tag is the highest stable version. Use explicit tag pushes rather
 than `git push --tags`. See README for the publishing and acceptance steps.
 
 ## Commit & Pull Request Guidelines

@@ -129,7 +129,15 @@ jobs:
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          docker buildx imagetools create -t "$IMAGE:$VERSION" \
+          tags=(-t "$IMAGE:$VERSION")
+          highest=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+          if [ "$highest" = "$GITHUB_REF_NAME" ]; then
+            tags+=(-t "$IMAGE:latest")
+            echo "PUBLISH_LATEST=1" >> "$GITHUB_ENV"
+          else
+            echo "::notice::Not moving latest: $GITHUB_REF_NAME is not the highest stable tag ($highest)"
+          fi
+          docker buildx imagetools create "${tags[@]}" \
             "$IMAGE:sha-$GITHUB_SHA-amd64" "$IMAGE:sha-$GITHUB_SHA-arm64"
           digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}')
           python tools/build_mcp_bundle.py --image "$IMAGE@$digest"
@@ -140,6 +148,21 @@ jobs:
           trap 'rm -rf "$anonymous_config"' EXIT
           docker --config "$anonymous_config" pull --platform linux/amd64 "$IMAGE:${{ needs.validate.outputs.version }}"
           docker --config "$anonymous_config" pull --platform linux/arm64 "$IMAGE:${{ needs.validate.outputs.version }}"
+          if [ "${PUBLISH_LATEST:-}" = "1" ]; then
+            repo=${IMAGE#ghcr.io/}
+            token=$(curl -fsS "https://ghcr.io/token?scope=repository:$repo:pull" \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin)["token"])')
+            manifest_digest() {
+              curl -fsSI -H "Authorization: Bearer $token" \
+                -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+                "https://ghcr.io/v2/$repo/manifests/$1" \
+                | tr -d '\r' | awk -F': ' 'tolower($1) == "docker-content-digest" {print $2}'
+            }
+            versioned=$(manifest_digest "${{ needs.validate.outputs.version }}")
+            latest=$(manifest_digest latest)
+            [ -n "$versioned" ] && [ "$versioned" = "$latest" ] \
+              || { echo "latest ('$latest') does not match version ('$versioned')" >&2; exit 1; }
+          fi
       - name: Scan final release bundle
         run: python tools/security_check.py secrets --artifacts dist --output "$RUNNER_TEMP/publish-security"
       - name: Retain final bundle scan
