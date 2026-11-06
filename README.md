@@ -500,6 +500,12 @@ revision, and license. The two tested architecture images are combined into a
 multi-platform image. The workflow attaches a source-free launcher ZIP to the
 matching GitHub release, pinned to the combined image's digest.
 
+The same push also tags the image `:latest`, but only when the pushed tag is the
+highest stable `vX.Y.Z` tag, so re-releasing an older line never moves `latest`
+backwards. The workflow checks that `latest` and `X.Y.Z` resolve to the same digest
+anonymously. `latest` is mutable and meant for quick starts; bundles and
+reproducible setups should keep using the digest or `:X.Y.Z`.
+
 For the **first release**, change the GHCR package visibility to **public** in
 GitHub package settings after the image is pushed. Public repository visibility
 does not automatically make the package public. If anonymous verification fails,
