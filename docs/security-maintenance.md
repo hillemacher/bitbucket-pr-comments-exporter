@@ -1,6 +1,9 @@
 # Security maintenance and publication
 
-Keep runtime credentials outside checkouts and synced folders. Use HTTPS for
+Keep runtime credentials outside checkouts and synced folders. The default
+`~/.config/bitbucket-pr-mcp` location is preferred. If a checkout-local override
+is necessary, `.bitbucket-pr-mcp/` is the documented ignored directory; arbitrary
+files named `config.toml` are deliberately not ignored globally. Use HTTPS for
 Bitbucket, a read-only PAT with minimal repository access, and hidden token input
 or an existing environment. Do not put real tokens in command arguments, shell
 history, examples, agent transcripts, or client configuration. CLI exports contain
