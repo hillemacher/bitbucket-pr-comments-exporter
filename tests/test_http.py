@@ -9,7 +9,7 @@ from bb_pr_export.http import AuthError, paginate_cloud, paginate_server
 
 class FakeResponse:
     def __init__(self, payload):
-        self.payload = payload
+        self.body = io.BytesIO(json.dumps(payload).encode("utf-8"))
 
     def __enter__(self):
         return self
@@ -17,8 +17,8 @@ class FakeResponse:
     def __exit__(self, exc_type, exc, traceback):
         return False
 
-    def read(self):
-        return json.dumps(self.payload).encode("utf-8")
+    def read(self, size=-1):
+        return self.body.read(size)
 
 
 class HttpTests(unittest.TestCase):
@@ -192,3 +192,72 @@ class CredentialTransportTests(unittest.TestCase):
             with self.subTest(headers=headers), self.assertRaisesRegex(BitbucketExportError, 'HTTPS'):
                 fetch_json('http://bb.example/api', headers)
         opener.assert_not_called()
+
+
+class ExportLimitTests(unittest.TestCase):
+    def test_limit_configuration_is_strict(self):
+        from bb_pr_export.limits import limits_from_config
+        from bb_pr_export.http import BitbucketExportError
+        for table in ([], {'unknown': 1}, {'max_pages': True}, {'max_pages': 1.5},
+                      {'timeout_seconds': float('nan')}, {'max_response_bytes': 0}):
+            with self.subTest(table=table), self.assertRaises(BitbucketExportError):
+                limits_from_config({'limits': table})
+
+    @patch('urllib.request.OpenerDirector.open')
+    def test_per_response_and_total_limits_include_error_bodies(self, opener):
+        from bb_pr_export.http import BitbucketExportError, fetch_json
+        from bb_pr_export.limits import Limits, export_budget
+        opener.return_value = io.BytesIO(b'{}' * 10)
+        with export_budget(Limits(max_response_bytes=10)), self.assertRaisesRegex(BitbucketExportError, 'size limit'):
+            fetch_json('https://api.example')
+        opener.side_effect = [io.BytesIO(b'{}'), io.BytesIO(b'{}')]
+        with export_budget(Limits(max_total_bytes=3)):
+            self.assertEqual(fetch_json('https://api.example'), {})
+            with self.assertRaisesRegex(BitbucketExportError, 'size limit'):
+                fetch_json('https://api.example')
+        opener.side_effect = urllib.error.HTTPError('https://api.example', 400, 'Bad request', {}, io.BytesIO(b'x'*11))
+        with export_budget(Limits(max_response_bytes=10)), self.assertRaisesRegex(BitbucketExportError, 'size limit'):
+            fetch_json('https://api.example')
+
+    @patch('bb_pr_export.http.fetch_json')
+    def test_cyclic_and_excessive_pagination_stops(self, fetch):
+        from bb_pr_export.http import BitbucketExportError
+        from bb_pr_export.limits import Limits, export_budget
+        fetch.return_value = {'values': [], 'next': 'https://api.example/page'}
+        with self.assertRaisesRegex(BitbucketExportError, 'Repeated'):
+            paginate_cloud('https://api.example/page', {})
+        self.assertEqual(fetch.call_count, 1)
+        fetch.reset_mock()
+        fetch.return_value = {'values': [], 'isLastPage': False, 'nextPageStart': 1}
+        with self.assertRaisesRegex(BitbucketExportError, 'Repeated'):
+            paginate_server('https://api.example/page', {})
+        self.assertEqual(fetch.call_count, 2)
+        fetch.reset_mock()
+        fetch.return_value = {'values': [], 'next': '?page=2'}
+        with export_budget(Limits(max_pages=1)), self.assertRaisesRegex(BitbucketExportError, 'pagination limit'):
+            paginate_cloud('https://api.example/page', {})
+        self.assertEqual(fetch.call_count, 1)
+
+    @patch('urllib.request.OpenerDirector.open')
+    def test_expired_deadline_never_opens_transport(self, opener):
+        from bb_pr_export.http import BitbucketExportError, fetch_json
+        from bb_pr_export.limits import export_budget
+        with patch('bb_pr_export.limits.time.monotonic', return_value=0):
+            with self.assertRaisesRegex(BitbucketExportError, 'deadline'), export_budget():
+                with patch('bb_pr_export.limits.time.monotonic', return_value=91):
+                    fetch_json('https://api.example')
+        opener.assert_not_called()
+
+    @patch('urllib.request.OpenerDirector.open')
+    def test_trickling_reads_recheck_deadline(self, opener):
+        from bb_pr_export.http import BitbucketExportError, fetch_json
+        from bb_pr_export.limits import export_budget
+        clock = [0]
+        class Response(io.BytesIO):
+            def read1(self, size):
+                clock[0] += 50
+                return b' '
+        opener.return_value = Response()
+        with patch('bb_pr_export.limits.time.monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(BitbucketExportError, 'deadline'), export_budget():
+                fetch_json('https://api.example')

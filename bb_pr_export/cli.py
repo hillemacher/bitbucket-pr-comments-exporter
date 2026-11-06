@@ -15,6 +15,7 @@ from .http import AuthError, BitbucketExportError, NetworkError, NotFoundError
 from .renderer import render_json, render_markdown
 from .files import write_private
 from .security import redact
+from .limits import export_budget, limits_from_config
 
 DEFAULT_CONFIG_PATHS = (
     Path("bb-export.toml"),
@@ -45,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         _reject_secret_config(config)
         args = _resolve_args(args, config)
         _validate_args(args)
+        limits = limits_from_config(config)
     except BitbucketExportError as exc:
         report(str(exc))
         return 1
@@ -55,7 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        export = _fetch_export(args, token)
+        with export_budget(limits):
+            export = _fetch_export(args, token)
         output_path = _output_path(args)
         content = render_json(export, include_deleted=args.include_deleted) if args.format == "json" else render_markdown(export, include_deleted=args.include_deleted)
         try:

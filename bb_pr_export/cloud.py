@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from .limits import bounded_export
 from urllib.parse import quote
 
 from .http import BitbucketExportError, auth_headers, fetch_json, paginate_cloud
@@ -11,6 +12,7 @@ from .http import BitbucketExportError, auth_headers, fetch_json, paginate_cloud
 CLOUD_BASE_URL = "https://api.bitbucket.org/2.0"
 
 
+@bounded_export
 def export_pull_request(workspace: str, repo: str, pr_id: str, token: str | None) -> dict[str, Any]:
     headers = auth_headers(token)
     base = f"{CLOUD_BASE_URL}/repositories/{quote(workspace)}/{quote(repo)}/pullrequests/{quote(str(pr_id))}"

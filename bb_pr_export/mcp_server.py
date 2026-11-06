@@ -46,7 +46,7 @@ def create_server(settings: Settings):
 
 def transport_security(host_port: int):
     from mcp.server.transport_security import TransportSecuritySettings
-    authorities = {f'{host}:{port}' for host in ('127.0.0.1', 'localhost', 'host.docker.internal')
+    authorities = {f'{host}:{port}' for host in ('127.0.0.1', 'localhost', '[::1]', 'host.docker.internal')
                    for port in (9000, host_port)}
     return TransportSecuritySettings(
         allowed_hosts=sorted(authorities),

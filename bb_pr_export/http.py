@@ -11,6 +11,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Iterable
 from urllib.parse import urljoin, urlsplit
+from .limits import bounded_export, current_budget
 
 
 class BitbucketExportError(Exception):
@@ -84,6 +85,7 @@ def auth_headers(token: str | None, username: str | None = None) -> dict[str, st
     return {"Authorization": f"Bearer {token}"}
 
 
+@bounded_export
 def fetch_json(
     url: str,
     headers: dict[str, str] | None = None,
@@ -100,11 +102,15 @@ def fetch_json(
     request = urllib.request.Request(url, headers=request_headers)
 
     try:
-        with urllib.request.build_opener(_SameOriginRedirectHandler()).open(request, timeout=DEFAULT_TIMEOUT) as response:
-            body = response.read().decode("utf-8")
+        with urllib.request.build_opener(_SameOriginRedirectHandler()).open(
+            request, timeout=min(DEFAULT_TIMEOUT, current_budget().remaining())
+        ) as response:
+            body = _read_body(response).decode("utf-8")
     except urllib.error.HTTPError as exc:
         error = _to_http_error(exc)
         if retry_5xx and isinstance(error, TransientHttpError):
+            if sleep_seconds >= current_budget().remaining():
+                raise BitbucketExportError('Export deadline exceeded before retry.') from None
             time.sleep(sleep_seconds)
             return fetch_json(url, headers, retry_5xx=False, sleep_seconds=sleep_seconds)
         raise error from exc
@@ -121,12 +127,18 @@ def fetch_json(
         raise BitbucketExportError(f"Invalid or empty JSON response from {url}") from exc
 
 
+@bounded_export
 def paginate_cloud(first_url: str, headers: dict[str, str]) -> list[dict[str, Any]]:
     """Collect all values from a Bitbucket Cloud paginated endpoint."""
     values: list[dict[str, Any]] = []
     url: str | None = first_url
+    seen: set[str] = set()
     while url:
         _check_origin(first_url, url)
+        if url in seen:
+            raise BitbucketExportError('Repeated pagination destination.')
+        seen.add(url)
+        current_budget().page()
         page = fetch_json(url, headers)
         if not isinstance(page, dict):
             raise BitbucketExportError(f"Expected JSON object from {url}")
@@ -138,11 +150,17 @@ def paginate_cloud(first_url: str, headers: dict[str, str]) -> list[dict[str, An
     return values
 
 
+@bounded_export
 def paginate_server(first_url: str, headers: dict[str, str]) -> list[dict[str, Any]]:
     """Collect all values from a Bitbucket Server/Data Center paginated endpoint."""
     values: list[dict[str, Any]] = []
     url = first_url
+    seen: set[str] = set()
     while True:
+        if url in seen:
+            raise BitbucketExportError('Repeated pagination destination.')
+        seen.add(url)
+        current_budget().page()
         page = fetch_json(url, headers)
         if not isinstance(page, dict):
             raise BitbucketExportError(f"Expected JSON object from {url}")
@@ -150,7 +168,10 @@ def paginate_server(first_url: str, headers: dict[str, str]) -> list[dict[str, A
         if page.get("isLastPage", True):
             break
         separator = "&" if "?" in first_url else "?"
-        url = f"{first_url}{separator}start={page['nextPageStart']}"
+        start = page.get('nextPageStart')
+        if isinstance(start, bool) or not isinstance(start, int) or start < 0:
+            raise BitbucketExportError('Invalid pagination offset.')
+        url = f"{first_url}{separator}start={start}"
     return values
 
 
@@ -171,7 +192,9 @@ def _to_http_error(exc: urllib.error.HTTPError) -> HttpError:
 
 def _read_error_message(exc: urllib.error.HTTPError) -> str:
     try:
-        body = exc.read().decode("utf-8")
+        body = _read_body(exc).decode("utf-8")
+    except BitbucketExportError:
+        raise
     except Exception:
         return exc.reason or "request failed"
     if not body:
@@ -191,3 +214,27 @@ def _read_error_message(exc: urllib.error.HTTPError) -> str:
             if isinstance(first, dict) and isinstance(first.get("message"), str):
                 return first["message"]
     return exc.reason or "request failed"
+
+
+def _read_body(response) -> bytes:
+    budget = current_budget()
+    parts: list[bytes] = []
+    size = 0
+    # read1 returns available data after one raw read, so trickling responses
+    # cannot keep a large buffered read alive indefinitely.
+    read = getattr(response, 'read1', response.read)
+    while True:
+        remaining = budget.remaining()
+        raw = getattr(getattr(response, 'fp', None), 'raw', None)
+        sock = getattr(raw, '_sock', None)
+        if sock is not None:
+            sock.settimeout(min(DEFAULT_TIMEOUT, remaining))
+        part = read(64 * 1024)
+        budget.remaining()
+        size += len(part)
+        budget.total_bytes += len(part)
+        if size > budget.limits.max_response_bytes or budget.total_bytes > budget.limits.max_total_bytes:
+            raise BitbucketExportError('Export response size limit exceeded.')
+        if not part:
+            return b''.join(parts)
+        parts.append(part)

@@ -70,7 +70,7 @@ class LauncherTests(unittest.TestCase):
                 def handle(self): pass
             with socketserver.TCPServer(('127.0.0.1',0),Handler) as listener:
                 thread=threading.Thread(target=listener.serve_forever,daemon=True);thread.start()
-                env={**os.environ,'PATH':str(base)+os.pathsep+os.environ['PATH'],
+                env={**{k: v for k, v in os.environ.items() if k != 'BB_TOKEN'},'PATH':str(base)+os.pathsep+os.environ['PATH'],
                      'FAKE_STATE':str(state),'FAKE_LOG':str(base/'calls'),'BB_CONFIG_DIR':str(config),'BB_MCP_PORT':str(listener.server_address[1]),
                      'BB_MCP_IMAGE':'ghcr.io/hillemacher/bitbucket-pr-mcp@sha256:'+'b'*64}
                 def run(*args, **extra):
