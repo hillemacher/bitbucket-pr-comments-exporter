@@ -69,8 +69,10 @@ def _check_origin(source: str, destination: str) -> None:
 
 
 class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
+    @bounded_export
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         _check_origin(req.full_url, newurl)
+        req.timeout = min(getattr(req, 'timeout', DEFAULT_TIMEOUT), current_budget().remaining())
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -78,6 +80,8 @@ def auth_headers(token: str | None, username: str | None = None) -> dict[str, st
     """Build Bitbucket auth headers without persisting credentials."""
     if token is None:
         return {}
+    if not token or any(character.isspace() for character in token):
+        raise BitbucketExportError('Bitbucket token must be nonempty and contain no whitespace.')
     if username:
         raw = f"{username}:{token}".encode("utf-8")
         encoded = base64.b64encode(raw).decode("ascii")

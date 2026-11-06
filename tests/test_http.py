@@ -261,3 +261,13 @@ class ExportLimitTests(unittest.TestCase):
         with patch('bb_pr_export.limits.time.monotonic', side_effect=lambda: clock[0]):
             with self.assertRaisesRegex(BitbucketExportError, 'deadline'), export_budget():
                 fetch_json('https://api.example')
+
+
+class HeaderSafetyTests(unittest.TestCase):
+    def test_malformed_tokens_are_rejected_without_echoing_values(self):
+        from bb_pr_export.http import auth_headers, BitbucketExportError
+        for token in ('', 'private\nvalue', 'private value'):
+            with self.subTest(nonempty=bool(token)), self.assertRaises(BitbucketExportError) as error:
+                auth_headers(token)
+            if token:
+                self.assertNotIn(token, str(error.exception))
