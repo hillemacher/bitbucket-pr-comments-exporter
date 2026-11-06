@@ -277,7 +277,9 @@ Configuration lives in `~/.config/bitbucket-pr-mcp/`: `config.toml` contains
 non-secret settings, while `bitbucket.pat` is a separate secret file. The folder
 has mode 700 and files have mode 600. Runtime mounts it read-only and reads the
 PAT into `BB_TOKEN` inside the process, rather than Docker's stored environment.
-Keep this folder outside repositories and synced folders. Setup validates local
+Keep this folder outside repositories and synced folders. If a deliberate local
+checkout override is needed, use `BB_CONFIG_DIR="$PWD/.bitbucket-pr-mcp"`; this
+repository ignores that entire directory. Setup validates local
 configuration; `check <PR_URL>` verifies actual API access and prints counts only.
 
 ```toml
