@@ -13,6 +13,8 @@ from . import cloud, server
 from .urls import parse_pr_url as _parse_pr_url
 from .http import AuthError, BitbucketExportError, NetworkError, NotFoundError
 from .renderer import render_json, render_markdown
+from .files import write_private
+from .security import redact
 
 DEFAULT_CONFIG_PATHS = (
     Path("bb-export.toml"),
@@ -34,13 +36,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    def report(message: str) -> None:
+        print(redact(message, (args.token, os.environ.get('BB_TOKEN')),
+                     (getattr(args, 'username', None), os.environ.get('BB_USERNAME'))), file=sys.stderr)
+
     try:
         config = _load_config(args.config)
         _reject_secret_config(config)
         args = _resolve_args(args, config)
         _validate_args(args)
     except BitbucketExportError as exc:
-        print(str(exc), file=sys.stderr)
+        report(str(exc))
         return 1
 
     token = (args.token or os.environ.get("BB_TOKEN")) if args.auth_mode == "token" else None
@@ -53,8 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         output_path = _output_path(args)
         content = render_json(export, include_deleted=args.include_deleted) if args.format == "json" else render_markdown(export, include_deleted=args.include_deleted)
         try:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(content, encoding="utf-8")
+            write_private(output_path, content)
         except OSError as exc:
             raise BitbucketExportError(f"Could not write output '{output_path}': {exc.strerror or str(exc)}") from exc
     except AuthError:
@@ -68,14 +73,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     except NotFoundError:
-        print(_not_found_message(args), file=sys.stderr)
+        report(_not_found_message(args))
         return 1
     except NetworkError as exc:
         hint = " Check the --server URL." if args.provider == "server" else ""
-        print(f"{exc}.{hint}", file=sys.stderr)
+        report(f"{exc}.{hint}")
         return 1
     except BitbucketExportError as exc:
-        print(str(exc), file=sys.stderr)
+        report(str(exc))
         return 1
 
     print(f"Wrote {output_path}")
@@ -131,7 +136,7 @@ def _load_config(config_path: str | None) -> dict[str, Any]:
         except OSError as exc:
             raise BitbucketExportError(f"Could not read config file '{path}': {exc.strerror}") from exc
         except tomllib.TOMLDecodeError as exc:
-            raise BitbucketExportError(f"Could not parse config file '{path}': {exc}") from exc
+            raise BitbucketExportError(f"Could not parse config file '{path}': invalid TOML syntax.") from exc
 
     for path in DEFAULT_CONFIG_PATHS:
         if path.exists():
@@ -141,7 +146,7 @@ def _load_config(config_path: str | None) -> dict[str, Any]:
             except OSError as exc:
                 raise BitbucketExportError(f"Could not read config file '{path}': {exc.strerror}") from exc
             except tomllib.TOMLDecodeError as exc:
-                raise BitbucketExportError(f"Could not parse config file '{path}': {exc}") from exc
+                raise BitbucketExportError(f"Could not parse config file '{path}': invalid TOML syntax.") from exc
     return {}
 
 

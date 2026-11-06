@@ -9,23 +9,13 @@ import json
 import os
 from pathlib import Path
 import sys
-import tempfile
 
 from bb_pr_export.http import BitbucketExportError
 from bb_pr_export.mcp_export import canonical_base, export_pr, load_settings, settings_from_config
+from bb_pr_export.files import write_private
+from bb_pr_export.security import redact
 
 CONFIG = Path('/config')
-
-
-def write_private(path: Path, value: str) -> None:
-    fd, name = tempfile.mkstemp(dir=path.parent, prefix='.' + path.name)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-            stream.write(value)
-        os.chmod(name, 0o600)
-        os.replace(name, path)
-    finally:
-        Path(name).unlink(missing_ok=True)
 
 
 def preflight():
@@ -125,7 +115,8 @@ def main():
                 print('preflight: ok')
     except (BitbucketExportError, OSError) as exc:
         # OSError details may include local paths, but never read/print file contents.
-        print(f'error: {exc}', file=sys.stderr)
+        print(redact(f'error: {exc}', (os.environ.get('BB_TOKEN'),),
+                     (os.environ.get('BB_USERNAME'),)), file=sys.stderr)
         return 1
     except Exception:
         print('error: MCP probe or startup failed; check service status and URL.', file=sys.stderr)
