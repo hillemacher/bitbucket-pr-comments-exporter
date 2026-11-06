@@ -199,3 +199,20 @@ class URLOnlyMCPTests(unittest.IsolatedAsyncioTestCase):
                     result = await client.call_tool('export_pr_comments', {'pr_url': url})
                     self.assertFalse(result.is_error)
                     fetch.assert_called_once_with(*expected)
+
+
+class ListenerTests(unittest.TestCase):
+    def test_standalone_defaults_to_loopback_and_container_can_opt_in(self):
+        from bb_pr_export import mcp_server
+        from unittest.mock import Mock
+        for flags, host in (([], '127.0.0.1'), (['--listen-host', '0.0.0.0'], '0.0.0.0')):
+            with self.subTest(host=host), patch.object(mcp_server, 'load_settings'), \
+                    patch.object(mcp_server, 'create_server', return_value=Mock()) as create, \
+                    patch.object(mcp_server, 'transport_security'):
+                self.assertEqual(mcp_server.main(['--config', 'fixture.toml'] + flags), 0)
+                self.assertEqual(create.return_value.run.call_args.kwargs['host'], host)
+
+    def test_mcp_rejects_plaintext_configuration(self):
+        from bb_pr_export.mcp_export import settings_from_config
+        with self.assertRaisesRegex(BitbucketExportError, 'HTTPS'):
+            settings_from_config({'mcp': {'base_url': 'http://bb.example'}})

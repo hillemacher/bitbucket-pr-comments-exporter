@@ -26,7 +26,7 @@ def canonical_base(url: str) -> str:
     try:
         p = urlsplit(url)
         port = p.port
-        if (p.scheme not in {'http', 'https'} or not p.hostname or p.username is not None
+        if (p.scheme != 'https' or not p.hostname or p.username is not None
                 or p.password is not None or p.query or p.fragment
                 or any(c.isspace() for c in url) or '\\' in url):
             raise ValueError
@@ -40,7 +40,7 @@ def canonical_base(url: str) -> str:
             authority += f':{port}'
         return f'{p.scheme}://{authority}{p.path.rstrip("/")}'
     except (ValueError, TypeError) as exc:
-        raise BitbucketExportError('Invalid Bitbucket base URL.') from exc
+        raise BitbucketExportError('Invalid Bitbucket base URL; HTTPS without embedded credentials is required.') from exc
 
 
 def load_settings(path: str) -> Settings:

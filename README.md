@@ -177,7 +177,8 @@ For Bitbucket Server/Data Center, generate a personal access token with pull req
 
 HTTP connections and reads use a 30-second socket-operation timeout; this is not an overall export deadline. A transient HTTP 5xx response is retried once after two seconds. Timeouts, invalid responses, and rejected redirects are not retried.
 
-Redirects and Cloud pagination links must stay on the original origin (scheme, hostname, and port). Cross-origin redirects, including HTTPS downgrades, are rejected before forwarding credentials. If your server redirects to another host, configure its final API base URL directly.
+Authenticated Bitbucket requests require HTTPS, including the initial URL. MCP
+setup rejects plaintext instance URLs. Redirects and Cloud pagination links must stay on the original origin (scheme, hostname, and port). Cross-origin redirects, including HTTPS downgrades, are rejected before forwarding credentials. If your server redirects to another host, configure its final API base URL directly.
 
 Network, response decoding, and output filesystem failures produce an error on stderr and exit code `1`.
 
@@ -194,6 +195,11 @@ The exporter uses only the Python standard library so it is easy to audit, simpl
 ## Container MCP for OpenCode and sandboxes
 
 The MCP service runs independently in Rancher Desktop on macOS (dockerd/moby).
+The standalone `bb-export-mcp --config PATH` command listens on `127.0.0.1:9000`
+by default. `--listen-host 0.0.0.0` is reserved for containers whose host port is
+published on loopback. Host/Origin checks protect against browser attacks; they
+do not authenticate a network client. Keep this unauthenticated service local.
+
 It exposes exactly one read-only tool,
 `export_pr_comments`, requiring one full PR URL as `pr_url` and returning the
 `provider`, `pr`, `assigned_reviewers`, `reviewers`, and `comments` JSON. All Python dependencies run inside the image; the Mac needs

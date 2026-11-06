@@ -92,7 +92,9 @@ def fetch_json(
     sleep_seconds: float = 2.0,
 ) -> Any:
     """Fetch JSON from a URL, retrying one transient 5xx failure."""
-    _origin(url)
+    scheme, _, _ = _origin(url)
+    if scheme != 'https' and any(key.lower() == 'authorization' for key in (headers or {})):
+        raise BitbucketExportError('HTTPS is required when sending Bitbucket credentials.')
     request_headers = {"Accept": "application/json"}
     request_headers.update(headers or {})
     request = urllib.request.Request(url, headers=request_headers)

@@ -12,7 +12,7 @@
 [server]
 # Base URL for Bitbucket Server/Data Center. If Bitbucket is hosted under a
 # context path, include it here, for example "https://company.example/bitbucket".
-# Use the final API host: redirects to another origin are rejected.
+# HTTPS is required when sending credentials. Use the final API host: redirects to another origin are rejected.
 server = "https://bitbucket.CompanyX"
 
 # Static repository location. These can still be overridden by CLI flags or
