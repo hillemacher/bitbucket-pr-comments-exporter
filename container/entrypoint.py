@@ -115,7 +115,8 @@ def main():
             settings = preflight()
             if args.command == 'serve':
                 from bb_pr_export.mcp_server import main as serve
-                return serve(['--config', str(CONFIG / 'config.toml'), '--host-port', os.environ.get('BB_MCP_HOST_PORT', '9002')])
+                return serve(['--config', str(CONFIG / 'config.toml'), '--listen-host', '0.0.0.0',
+                              '--host-port', os.environ.get('BB_MCP_HOST_PORT', '9002')])
             if args.command == 'check':
                 if not args.reference:
                     parser.error('check requires a full PR URL')

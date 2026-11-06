@@ -182,3 +182,13 @@ class RedirectTransportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CredentialTransportTests(unittest.TestCase):
+    @patch('urllib.request.OpenerDirector.open')
+    def test_http_authentication_fails_before_transport(self, opener):
+        from bb_pr_export.http import BitbucketExportError, fetch_json
+        for headers in ({'Authorization': 'Bearer fixture'}, {'authorization': 'Basic Zml4dHVyZQ=='}):
+            with self.subTest(headers=headers), self.assertRaisesRegex(BitbucketExportError, 'HTTPS'):
+                fetch_json('http://bb.example/api', headers)
+        opener.assert_not_called()

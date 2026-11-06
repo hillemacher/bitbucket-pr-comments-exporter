@@ -58,10 +58,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True)
     parser.add_argument('--host-port', type=int, default=9002)
+    parser.add_argument('--listen-host', choices=('127.0.0.1', '::1', '0.0.0.0'), default='127.0.0.1',
+                        help='Listen address; 0.0.0.0 is for containers with loopback-only publication')
     args = parser.parse_args(argv)
     try:
         mcp = create_server(load_settings(args.config))
-        mcp.run(transport='streamable-http', host='0.0.0.0', port=9000,
+        mcp.run(transport='streamable-http', host=args.listen_host, port=9000,
                 stateless_http=True, json_response=True,
                 transport_security=transport_security(args.host_port))
     except (BitbucketExportError, ImportError) as exc:
