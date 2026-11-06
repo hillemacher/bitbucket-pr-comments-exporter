@@ -26,7 +26,8 @@ chmod +x bitbucket-pr-mcp.sh
 Start Rancher Desktop with **dockerd (moby)**; `docker version` must show a server.
 Both Intel and Apple Silicon are supported. Docker needs network access to
 `ghcr.io` and your Bitbucket instance (including VPN and certificate trust).
-Have a Bitbucket token with pull request read access ready.
+Have a minimally scoped Bitbucket token with pull request read access ready.
+Bitbucket URLs must use HTTPS, including servers on a private network.
 Run the launcher as your normal user, without `sudo`.
 
 ## Setup and start
@@ -49,7 +50,8 @@ separately in `bitbucket.pat`. The directory is mode 700 and files are mode 600.
 The running service mounts them read-only. Keep this folder outside repositories
 and synced folders. Setup preserves existing values; `check` verifies actual
 Bitbucket access and prints counts only. An exported `BB_TOKEN` can supply setup's
-token; unset it afterward. Do not put tokens in the guide or client configuration.
+token via a temporary `0600` file mounted read-only for setup and removed on exit;
+the token is never put in Docker's stored environment. Unset `BB_TOKEN` afterward. Do not put tokens in the guide or client configuration.
 
 ## Connect OpenCode
 
@@ -115,11 +117,14 @@ access to pull the requested image; automatic Docker restarts use the installed 
 Start troubleshooting with `doctor` and `logs`: check Docker, VPN/DNS, certificate
 trust, token permissions, the base URL, and port conflicts. Keep TLS verification
 enabled. A sandbox connection failure requires checking the actual consumer's
-access rule and `host.docker.internal` routing. Very large reviews may need a
-larger client timeout.
+access rule and `host.docker.internal` routing. Exports have a shared 90-second budget, 1,000-page limit, 8 MiB per response,
+and 64 MiB total by default. Configure `[limits]` in `config.toml` for larger reviews
+and match the client timeout. DNS resolution can exceed socket deadlines on some platforms.
 
 This endpoint serves one local user using their token and has no incoming OAuth.
-It publishes only on loopback and applies Host/Origin protection. A detected
+The launcher publishes only on loopback and applies Host/Origin protection.
+These headers do not authenticate network clients. All allowed local clients
+inherit the PAT's read access across the configured instance. A detected
 non-loopback listener stops startup; missing listener data is reported as
 unverified. Keep this service on the local machine.
 

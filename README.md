@@ -18,26 +18,32 @@ pipx install .
 
 ## Quickstart
 
+Load a token using hidden input in Bash or Zsh:
+
+```bash
+printf 'Bitbucket token: '
+read -r -s BB_TOKEN
+printf '\n'
+export BB_TOKEN
+```
+
 Bitbucket Cloud:
 
 ```bash
-bb-export cloud --workspace WORKSPACE --repo REPO --pr 42 --token API_TOKEN
-bb-export cloud --url https://bitbucket.org/WORKSPACE/REPO/pull-requests/42 --token API_TOKEN
+bb-export cloud --workspace WORKSPACE --repo REPO --pr 42
+bb-export cloud --url https://bitbucket.org/WORKSPACE/REPO/pull-requests/42
 ```
 
 Bitbucket Server/Data Center:
 
 ```bash
-bb-export server --server https://bitbucket.example.com --project PROJECT --repo REPO --pr 42 --username USERNAME --token TOKEN
-bb-export server --url https://bitbucket.example.com/projects/PROJECT/repos/REPO/pull-requests/42/overview --username USERNAME --token TOKEN
+bb-export server --server https://bitbucket.example.com --project PROJECT --repo REPO --pr 42 --username USERNAME
+bb-export server --url https://bitbucket.example.com/projects/PROJECT/repos/REPO/pull-requests/42/overview --username USERNAME
 ```
 
-You can also provide secrets with environment variables:
-
-```bash
-BB_TOKEN=API_TOKEN bb-export cloud --workspace WORKSPACE --repo REPO --pr 42
-BB_USERNAME=USERNAME BB_TOKEN=TOKEN bb-export server --server https://bitbucket.example.com --project PROJECT --repo REPO --pr 42
-```
+Run `unset BB_TOKEN` when finished. `--token` remains available for compatibility,
+but real token values in command arguments or inline environment assignments can
+appear in process listings or shell history. Avoid shell tracing when handling tokens.
 
 Exports are written atomically with owner-only permissions (`0600` on POSIX).
 New output directories use `0700`; existing directory permissions are preserved.
@@ -150,8 +156,12 @@ include_deleted = false
 Then export a PR with only the changing value:
 
 ```bash
-BB_TOKEN=TOKEN bb-export server --config bb-export.toml --pr 500
+bb-export server --config bb-export.toml --pr 500
 ```
+
+Treat current-directory TOML as trusted input: it can select the Server host and
+output location. In an unfamiliar checkout, pass an explicit trusted `--config`
+and PR URL before using an ambient token.
 
 CLI flags override values parsed from `--url`; URL values override config; config fills missing defaults. Credentials are never read from config files. Use `--token` or `BB_TOKEN`.
 
@@ -173,6 +183,10 @@ as a fallback. Authentication mode is selected only through command-line options
 not TOML configuration. The bundled skill defaults to egress mode instead.
 
 ## Tokens
+
+Use a minimally scoped, read-only token. Any permitted local MCP client can read
+PR feedback accessible to that token across the configured instance. The service
+does not provide per-client or per-repository authorization.
 
 For Bitbucket Cloud, create a scoped API token with `read:pullrequest:bitbucket` permission. Pass it with `--token` or `BB_TOKEN`; the exporter uses Bearer authentication, so no username or email is required. App passwords are no longer supported. See [using API tokens](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/) and [pull request API scopes](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
 
@@ -519,3 +533,10 @@ python3 tests/smoke_container.py bitbucket-pr-mcp:local
 The smoke-test host needs the optional MCP extra. The macOS smoke check includes
 `host.docker.internal`; Linux CI checks host exports and container networking
 without assuming macOS host-loopback forwarding.
+
+## Security and publication checks
+
+See [the security maintenance guide](docs/security-maintenance.md) for credential
+scanning, image scans/SBOMs, dependency updates, artifact review, and safe source
+publication. Source and artifact secret checks run on branch/PR builds. Candidate
+and stable publishing also require an image vulnerability gate before upload.
