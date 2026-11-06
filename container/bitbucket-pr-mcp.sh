@@ -183,7 +183,7 @@ run_tool() {
   docker run --rm --user "$(id -u):$(id -g)" -v "$CONFIG_DIR:/config:ro" "$IMAGE" "$@"
 }
 
-cmd_setup() {
+cmd_setup() (
   local setup_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -192,12 +192,23 @@ cmd_setup() {
     esac
     shift
   done
-  local docker_args=(--rm -i --user "$(id -u):$(id -g)" -v "$CONFIG_DIR:/config" -e BB_TOKEN)
+  local docker_args=(--rm -i --user "$(id -u):$(id -g)" -v "$CONFIG_DIR:/config")
   [[ -t 0 ]] && docker_args+=(-t)
 
   require_docker
   mkdir -p "$CONFIG_DIR"
   chmod 700 "$CONFIG_DIR"
+  local setup_token=""
+  trap 'if [[ -n "$setup_token" ]]; then rm -f "$setup_token"; fi' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if [[ -n "${BB_TOKEN:-}" ]]; then
+    setup_token="$(mktemp "$CONFIG_DIR/.setup-token.XXXXXX")"
+    chmod 600 "$setup_token"
+    printf '%s' "$BB_TOKEN" > "$setup_token"
+    docker_args+=(-v "$setup_token:/run/setup-token:ro")
+    setup_args+=(--token-file /run/setup-token)
+  fi
   pull_image
   local candidate_image
   candidate_image="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
@@ -209,7 +220,7 @@ cmd_setup() {
     echo "Setup complete. Start the service with: $0 start"
   fi
   return "$status"
-}
+)
 
 cmd_start() {
   local restart_policy="no" saved_policy fingerprint previous_fingerprint existed="" was_running=""
