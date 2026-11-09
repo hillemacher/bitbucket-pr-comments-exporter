@@ -114,6 +114,33 @@ class ExportServiceTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('mcp'), 'Install the optional MCP extra')
 class MCPTests(unittest.IsolatedAsyncioTestCase):
+    async def test_multiline_location_survives_tool_call(self):
+        from mcp import Client
+        from bb_pr_export.mcp_server import create_server
+
+        activities = [{
+            'commentAnchor': {
+                'path': 'a.py', 'line': 14, 'lineType': 'ADDED', 'fileType': 'TO',
+                'multilineMarker': {'startLine': 11, 'startLineType': 'ADDED'},
+                'multilineSpan': {'srcSpanStart': 8, 'srcSpanEnd': 8, 'dstSpanStart': 10, 'dstSpanEnd': 14},
+            },
+            'comment': {'id': 1, 'text': 'First paragraph\n\nSecond paragraph'},
+        }]
+        with patch.dict(os.environ, {'BB_TOKEN': 'fixture'}), \
+                patch('bb_pr_export.server.fetch_json', return_value={'id': 42}), \
+                patch('bb_pr_export.server.paginate_server', return_value=activities):
+            async with Client(create_server(Settings('https://bb.example/bitbucket'))) as client:
+                result = await client.call_tool('export_pr_comments', {'pr_url': SERVER})
+
+        self.assertFalse(result.is_error)
+        comment = result.structured_content['comments'][0]
+        self.assertEqual(comment['location'], {
+            'path': 'a.py', 'line': 14, 'side': 'new',
+            'ranges': {'old': {'start_line': 8, 'end_line': 8}, 'new': {'start_line': 10, 'end_line': 14}},
+        })
+        self.assertEqual(comment['body'], 'First paragraph\n\nSecond paragraph')
+        self.assertEqual(json.loads(result.content[0].text), result.structured_content)
+
     async def test_inventory_and_structured_result(self):
         from mcp import Client
         from bb_pr_export.mcp_server import create_server

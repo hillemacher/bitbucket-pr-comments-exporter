@@ -7,6 +7,7 @@ from .limits import bounded_export
 from urllib.parse import quote
 
 from .http import BitbucketExportError, auth_headers, fetch_json, paginate_server
+from .locations import line_range
 
 
 @bounded_export
@@ -133,15 +134,39 @@ def _anchor_location(anchor: dict[str, Any]) -> dict[str, Any] | None:
     if not anchor:
         return None
     line = anchor.get("line")
-    line_type = (anchor.get("lineType") or "").upper()
-    side = "old" if line_type == "REMOVED" else "new" if line_type == "ADDED" else None
-    if line_type == "CONTEXT":
-        side = {"FROM": "old", "TO": "new"}.get((anchor.get("fileType") or "").upper())
-    return {
+    file_type = anchor.get("fileType")
+    side = _anchor_side(anchor.get("lineType"), file_type)
+    location = {
         "path": _anchor_path(anchor),
         "line": line,
         "side": side,
     }
+    ranges = {}
+    span = anchor.get("multilineSpan")
+    if isinstance(span, dict):
+        for range_side, prefix in (("old", "src"), ("new", "dst")):
+            bounds = line_range(span.get(f"{prefix}SpanStart"), span.get(f"{prefix}SpanEnd"))
+            if bounds is not None:
+                ranges[range_side] = bounds
+
+    marker = anchor.get("multilineMarker")
+    if side is not None and side not in ranges and isinstance(marker, dict):
+        if _anchor_side(marker.get("startLineType"), file_type) == side:
+            bounds = line_range(marker.get("startLine"), line)
+            if bounds is not None:
+                ranges[side] = bounds
+
+    if ranges:
+        location["ranges"] = ranges
+    return location
+
+
+def _anchor_side(line_type: Any, file_type: Any) -> str | None:
+    if not isinstance(line_type, str):
+        return None
+    if line_type.upper() == "CONTEXT" and isinstance(file_type, str):
+        return {"FROM": "old", "TO": "new"}.get(file_type.upper())
+    return {"REMOVED": "old", "ADDED": "new"}.get(line_type.upper())
 
 
 def _anchor_path(anchor: dict[str, Any]) -> Any:
