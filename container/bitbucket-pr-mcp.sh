@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-DEFAULT_IMAGE="ghcr.io/hillemacher/bitbucket-pr-mcp:0.1.0"
+DEFAULT_IMAGE="ghcr.io/hillemacher/bitbucket-pr-mcp:0.1.1"
 CONFIG_DIR="${BB_CONFIG_DIR:-$HOME/.config/bitbucket-pr-mcp}"
 HOST_PORT="${BB_MCP_PORT:-9002}"
 IMAGE="${BB_MCP_IMAGE:-$DEFAULT_IMAGE}"
