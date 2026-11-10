@@ -17,6 +17,28 @@ PR = {
 class ServerTests(unittest.TestCase):
     @patch("bb_pr_export.server.paginate_server")
     @patch("bb_pr_export.server.fetch_json", return_value=PR)
+    def test_marker_fallback_and_reply_inheritance(self, fetch_json, paginate_server):
+        anchor = {
+            "path": "a.py", "line": 14, "lineType": "CONTEXT", "fileType": "FROM",
+            "multilineMarker": {"startLine": 10, "startLineType": "REMOVED"},
+            "multilineSpan": {"srcSpanStart": 10, "srcSpanEnd": None},
+        }
+        paginate_server.return_value = [
+            {"commentAnchor": anchor, "comment": {"id": 1, "comments": [{"id": 2}]}},
+            {"comment": {"id": 3, "anchor": {
+                **anchor, "multilineMarker": {"startLine": 10, "startLineType": "ADDED"},
+            }}},
+        ]
+
+        comments = export_pull_request("https://bitbucket.example", "PROJ", "repo", "9178", "token")["comments"]
+
+        legacy = {"path": "a.py", "line": 14, "side": "old"}
+        ranged = {**legacy, "ranges": {"old": {"start_line": 10, "end_line": 14}}}
+        self.assertEqual([comment["location"] for comment in comments], [ranged, ranged, legacy])
+        self.assertEqual(comments[1]["parent_id"], 1)
+
+    @patch("bb_pr_export.server.paginate_server")
+    @patch("bb_pr_export.server.fetch_json", return_value=PR)
     def test_normalizes_string_anchor_path(self, fetch_json, paginate_server):
         paginate_server.return_value = [
             {
