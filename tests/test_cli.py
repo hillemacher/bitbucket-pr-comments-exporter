@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,40 @@ EXPORT = {
 
 
 class CliTests(unittest.TestCase):
+    @patch.dict("os.environ", {"BB_TOKEN": "token"}, clear=True)
+    @patch("bb_pr_export.cloud.fetch_json", return_value={"id": 500})
+    @patch("bb_pr_export.cloud.paginate_cloud")
+    def test_cloud_json_preserves_diff_side_ranges(self, paginate_cloud, fetch_json):
+        paginate_cloud.return_value = [
+            {"id": 1, "inline": {"path": "a.py", "start_from": 6, "from": 9}},
+            {"id": 2, "inline": {"path": "a.py", "start_to": 10, "to": 14}},
+            {"id": 3, "inline": {"path": "a.py", "start_from": 6, "from": 9, "start_to": 10, "to": 14}},
+            {"id": 4, "inline": {"path": "a.py", "start_to": None, "to": 14}},
+            {"id": 5, "inline": {"path": "a.py", "start_from": 6, "start_to": 15, "to": 14}},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = Path(temp_dir) / "config.toml"
+            config.write_text("", encoding="utf-8")
+            output = Path(temp_dir) / "out.json"
+            exit_code = main([
+                "cloud", "--config", str(config), "--format", "json", "--output", str(output),
+                "--url", "https://bitbucket.org/workspace/repo/pull-requests/500",
+            ])
+            self.assertEqual(exit_code, 0)
+            comments = json.loads(output.read_text(encoding="utf-8"))["comments"]
+
+        old = {"start_line": 6, "end_line": 9}
+        new = {"start_line": 10, "end_line": 14}
+        old_anchor = {"path": "a.py", "line": 9, "side": "old"}
+        new_anchor = {"path": "a.py", "line": 14, "side": "new"}
+        self.assertEqual([comment["location"] for comment in comments], [
+            {**old_anchor, "ranges": {"old": old}},
+            {**new_anchor, "ranges": {"new": new}},
+            {**new_anchor, "ranges": {"old": old, "new": new}},
+            new_anchor,
+            new_anchor,
+        ])
+
     @patch.dict("os.environ", {"BB_TOKEN": "token"}, clear=True)
     @patch("bb_pr_export.cli.server.export_pull_request", return_value=EXPORT)
     def test_server_url_derives_required_values(self, export_pull_request):
