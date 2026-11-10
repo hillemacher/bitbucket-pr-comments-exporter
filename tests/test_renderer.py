@@ -4,6 +4,27 @@ from bb_pr_export.renderer import render_markdown
 
 
 class RendererTests(unittest.TestCase):
+    def test_groups_by_full_diff_location(self):
+        anchor = {"path": "a.py", "line": 14, "side": "new"}
+        new = {"start_line": 10, "end_line": 14}
+        old = {"start_line": 6, "end_line": 9}
+        locations = [
+            anchor,
+            {**anchor, "ranges": {"new": new}},
+            {**anchor, "ranges": {"new": new, "old": old}},
+            {**anchor, "ranges": {"old": old, "new": new}},
+        ]
+        export = {"pr": {"id": 42}, "comments": [
+            {"id": index, "inline": True, "location": location}
+            for index, location in enumerate(locations, start=1)
+        ]}
+        headings = [line for line in render_markdown(export).splitlines() if line.startswith("### ")]
+        self.assertEqual(headings, [
+            "### 📄 `a.py` line 14 (new)",
+            "### 📄 `a.py` lines 10–14 (new)",
+            "### 📄 `a.py` lines 6–9 (old), lines 10–14 (new)",
+        ])
+
     def test_assignment_section_and_legacy_payloads(self):
         export = {"pr": {"id": 42}, "reviewers": [{"reviewer": "Bob", "decision": "approved"}]}
         self.assertNotIn("## Assigned reviewers", render_markdown(export))

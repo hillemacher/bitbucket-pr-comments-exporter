@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 
+InlineLocation = tuple[str | None, int | None, str | None, tuple[tuple[str, int, int], ...]]
+
+
 def render_json(export: dict[str, Any], *, include_deleted: bool = False) -> str:
     filtered = {**export, "comments": _filter_comments(export.get("comments", []), include_deleted)}
     return json.dumps(filtered, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
@@ -58,14 +61,18 @@ def render_markdown(export: dict[str, Any], *, include_deleted: bool = False) ->
     )
 
     roots, replies = _split_threads(comments)
-    for location, group in _group_inline_roots(roots):
-        path = location[0] or "unknown"
-        line = location[1]
-        side = location[2]
-        suffix = f" line {line}" if line is not None else ""
-        if side:
-            suffix = f"{suffix} ({side})"
-        lines.extend([f"### 📄 `{path}`{suffix}", ""])
+    for (path, line, side, ranges), group in _group_inline_roots(roots):
+        if ranges:
+            labels = [
+                f"line {start} ({range_side})" if start == end else f"lines {start}–{end} ({range_side})"
+                for range_side, start, end in ranges
+            ]
+            suffix = " " + ", ".join(labels)
+        else:
+            suffix = f" line {line}" if line is not None else ""
+            if side:
+                suffix = f"{suffix} ({side})"
+        lines.extend([f"### 📄 `{path or 'unknown'}`{suffix}", ""])
         for comment in group:
             _render_comment(lines, comment, replies, include_deleted)
         lines.extend(["---", ""])
@@ -101,15 +108,22 @@ def _split_threads(comments: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
     return roots, replies
 
 
-def _group_inline_roots(roots: list[dict[str, Any]]) -> list[tuple[tuple[str | None, int | None, str | None], list[dict[str, Any]]]]:
-    groups: dict[tuple[str | None, int | None, str | None], list[dict[str, Any]]] = defaultdict(list)
+def _group_inline_roots(roots: list[dict[str, Any]]) -> list[tuple[InlineLocation, list[dict[str, Any]]]]:
+    groups: dict[InlineLocation, list[dict[str, Any]]] = defaultdict(list)
     for comment in roots:
         if comment.get("inline"):
             location = comment.get("location") or {}
-            groups[(location.get("path"), location.get("line"), location.get("side"))].append(comment)
+            ranges = location.get("ranges") or {}
+            bounds = tuple(
+                (side, ranges[side]["start_line"], ranges[side]["end_line"])
+                for side in ("old", "new") if side in ranges
+            )
+            groups[(location.get("path"), location.get("line"), location.get("side"), bounds)].append(comment)
     return [
         (location, sorted(group, key=_comment_sort_key))
-        for location, group in sorted(groups.items(), key=lambda item: ((item[0][0] or ""), item[0][1] or 0, item[0][2] or ""))
+        for location, group in sorted(
+            groups.items(), key=lambda item: (item[0][0] or "", item[0][1] or 0, item[0][2] or "", item[0][3])
+        )
     ]
 
 

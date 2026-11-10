@@ -205,7 +205,13 @@ Network, response decoding, and output filesystem failures produce an error on s
 
 ## Output Format
 
-The Markdown output starts with PR title, author, state, branch direction, creation date, and description. It then lists assigned reviewers and includes a review outcome table when reviewer decisions are available, followed by inline comments grouped by file and line, then general comments. Replies are nested under their parent comment.
+The Markdown output starts with PR title, author, state, branch direction, creation date, and description. It then lists assigned reviewers and includes a review outcome table when reviewer decisions are available, followed by inline comments grouped by file and line or line range, then general comments. Replies are nested under their parent comment.
+
+CLI JSON and MCP responses keep `location.line` as the Bitbucket anchor line.
+When Bitbucket reports a usable range, `location.ranges` contains inclusive
+`start_line` and `end_line` values under `old` (before the change), `new` (after
+the change), or both. For example, `{"new": {"start_line": 10, "end_line": 14}}`
+describes a selection on lines 10–14 of the new file.
 
 The resulting `.md` file is designed to be pasted or attached as LLM context when asking for a review summary, unresolved issue list, implementation follow-up plan, or risk analysis.
 

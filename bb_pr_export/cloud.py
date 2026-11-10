@@ -7,6 +7,7 @@ from .limits import bounded_export
 from urllib.parse import quote
 
 from .http import BitbucketExportError, auth_headers, fetch_json, paginate_cloud
+from .locations import line_range
 
 
 CLOUD_BASE_URL = "https://api.bitbucket.org/2.0"
@@ -83,11 +84,22 @@ def _inline_location(inline: dict[str, Any]) -> dict[str, Any] | None:
     from_line = inline.get("from")
     to_line = inline.get("to")
     side = "old" if from_line is not None and to_line is None else "new"
-    return {
+    location = {
         "path": inline.get("path"),
         "line": to_line if to_line is not None else from_line,
         "side": side,
     }
+    ranges = {}
+    for range_side, start, end in (
+        ("old", inline.get("start_from"), from_line),
+        ("new", inline.get("start_to"), to_line),
+    ):
+        bounds = line_range(start, end)
+        if bounds is not None:
+            ranges[range_side] = bounds
+    if ranges:
+        location["ranges"] = ranges
+    return location
 
 
 def _content_text(content: Any) -> str:
